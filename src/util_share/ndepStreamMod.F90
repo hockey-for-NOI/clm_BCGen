@@ -196,7 +196,7 @@ contains
     ! Set domain data type for internal clm grid
     use clm_varcon  , only : re
     use domainMod   , only : ldomain
-    use seq_flds_mod
+    use global_var, only: metaData
     implicit none
     ! 
     ! arguments
@@ -215,8 +215,8 @@ contains
     ! Note that in addition land carries around landfrac for the purposes of domain checking
     ! 
     lsize = mct_gsMap_lsize(gsmap_lnd_gdc2glo, mpicom)
-    call mct_gGrid_init( GGrid=dom_clm, CoordChars=trim(seq_flds_dom_coord), &
-                         OtherChars=trim(seq_flds_dom_other), lsize=lsize )
+    call mct_gGrid_init( GGrid=dom_clm, CoordChars=trim(metaData%flds_dom_coord), &
+                         OtherChars='', lsize=lsize )
     !
     ! Allocate memory
     !

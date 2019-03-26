@@ -33,7 +33,7 @@
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_initializeMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/pftdynMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_initializeMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/STATICEcosysDynMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_initializeMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/STATICEcosysDynMod.o
-/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_initializeMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/DustMod.o
+/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_initializeMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/DUSTMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_initializeMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_time_manager.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_initializeMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_time_manager.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_initializeMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/fileutils.o

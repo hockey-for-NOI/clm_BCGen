@@ -301,59 +301,6 @@ contains
 
     glc_nec = 0
 
-    if (seq_flds_x2s_fields /= ' ') then
-       call mct_aVect_init(x2s, rList=seq_flds_x2s_fields, lsize=1)
-
-       do num = 1,glc_nec_max
-          write(cnum,'(i2.2)') num
-          name = 'Sg_frac' // cnum
-          index_x2s_Sg_frac(num)   = mct_avect_indexra(x2s,trim(name),perrwith='quiet') 
-          name = 'Sg_topo' // cnum
-          index_x2s_Sg_topo(num)   = mct_avect_indexra(x2s,trim(name),perrwith='quiet')
-          name = 'Fsgg_rofi' // cnum
-          index_x2s_Fsgg_rofi(num) = mct_avect_indexra(x2s,trim(name),perrwith='quiet')
-          name = 'Fsgg_rofl' // cnum
-          index_x2s_Fsgg_rofl(num) = mct_avect_indexra(x2s,trim(name),perrwith='quiet')
-          name = 'Fsgg_hflx' // cnum
-          index_x2s_Fsgg_hflx(num) = mct_avect_indexra(x2s,trim(name),perrwith='quiet')
-          if ( index_x2s_Sg_frac(num)   == 0 .and. &
-               index_x2s_Sg_topo(num)   == 0 .and. &
-               index_x2s_Fsgg_rofi(num) == 0 .and. &
-               index_x2s_fsgg_rofl(num) == 0 .and. &
-               index_x2s_Fsgg_hflx(num) == 0 ) then
-             exit
-          end if
-          glc_nec = num
-       end do
-       if (glc_nec == glc_nec_max) then
-          call shr_sys_abort (subname // 'error: glc_nec_cpl cannot equal glc_nec_max')
-       end if
-
-       nflds_x2s = mct_avect_nRattr(x2s)
-       call mct_aVect_clean(x2s)
-    end if
-
-    !-------------------------------------------------------------
-    ! sno -> drv (for cism coupling)
-    !-------------------------------------------------------------
-
-    if (seq_flds_s2x_fields /= ' ') then
-       call mct_aVect_init(s2x, rList=seq_flds_s2x_fields, lsize=1)
-
-       do num = 1,glc_nec
-          write(cnum,'(i2.2)') num
-
-          name = 'Ss_tsrf' // cnum
-          index_s2x_Ss_tsrf(num)   = mct_avect_indexra(s2x,trim(name))
-          name = 'Ss_topo' // cnum
-          index_s2x_Ss_topo(num)   = mct_avect_indexra(s2x,trim(name))
-          name = 'Fgss_qice' // cnum
-          index_s2x_Fgss_qice(num) = mct_avect_indexra(s2x,trim(name))
-       end do
-
-       nflds_s2x = mct_avect_nRattr(s2x)
-       call mct_aVect_clean(s2x)
-    end if
 
   end subroutine clm_cpl_indices_set
 
