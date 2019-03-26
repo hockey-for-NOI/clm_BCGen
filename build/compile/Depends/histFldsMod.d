@@ -9,6 +9,7 @@
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/histFldsMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_glclnd.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/histFldsMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/histFileMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/histFldsMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/surfrdMod.o
+/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/histFldsMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/shr_megan_mod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/histFldsMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_varpar.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/histFldsMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_varpar.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/histFldsMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/histFileMod.o

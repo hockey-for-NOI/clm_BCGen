@@ -6,6 +6,7 @@
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_atmlnd.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/spmdMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_atmlnd.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/abortutils.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_atmlnd.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/seq_drydep_mod.o
+/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_atmlnd.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/shr_megan_mod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_atmlnd.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clmtype.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_atmlnd.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/subgridAveMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_atmlnd.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_varcon.o

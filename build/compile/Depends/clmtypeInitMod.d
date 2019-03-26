@@ -19,6 +19,7 @@
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clmtypeInitMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/surfrdMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clmtypeInitMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/surfrdMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clmtypeInitMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_varcon.o
+/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clmtypeInitMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/shr_megan_mod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clmtypeInitMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/seq_drydep_mod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clmtypeInitMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_varcon.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clmtypeInitMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_varcon.o

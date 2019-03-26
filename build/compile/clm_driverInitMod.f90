@@ -47,7 +47,7 @@ contains
     use clm_atmlnd, only    : clm_a2l
     use domainMod, only     : ldomain
     use clmtype
-    use QsatMod,    only    : Qsat
+    use QSatMod,    only    : Qsat
 
 !
 ! !ARGUMENTS:

@@ -6,4 +6,4 @@
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_driverInitMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_atmlnd.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_driverInitMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/domainMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_driverInitMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clmtype.o
-/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_driverInitMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/QsatMod.o
+/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_driverInitMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/QSatMod.o

@@ -25,7 +25,7 @@ module VOCEmissionMod
 
   use shr_megan_mod,  only : shr_megan_megcomps_n, shr_megan_megcomp_t, shr_megan_linkedlist
   use shr_megan_mod,  only : shr_megan_mechcomps_n, shr_megan_mechcomps, shr_megan_mapped_emisfctrs
-  use MEGANFactorsMod,only : Agro, Amat, Anew, Aold, betaT, ct1, ct2, LDF, Ceo
+  use MEGANFactorsMod, only : Agro, Amat, Anew, Aold, betaT, ct1, ct2, LDF, Ceo
 
 !
 ! !PUBLIC TYPES:

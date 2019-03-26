@@ -14,6 +14,7 @@ module clm_cpl_indices
 ! !USES:
 
   use shr_sys_mod,    only : shr_sys_abort
+  use global_var, only: metaData
   implicit none
 
   SAVE
@@ -159,8 +160,6 @@ contains
 ! interface.
 !
 ! !USES:
-  use seq_flds_mod  , only: seq_flds_x2l_fields, seq_flds_l2x_fields,     &
-                            seq_flds_x2s_fields, seq_flds_s2x_fields
   use mct_mod       , only: mct_aVect, mct_aVect_init, mct_avect_indexra, &
                             mct_aVect_clean, mct_avect_nRattr
   use seq_drydep_mod, only: drydep_fields_token, lnd_drydep
@@ -189,8 +188,8 @@ contains
     ! Determine attribute vector indices
 
     ! create temporary attribute vectors
-    call mct_aVect_init(x2l, rList=seq_flds_x2l_fields, lsize=1)
-    call mct_aVect_init(l2x, rList=seq_flds_l2x_fields, lsize=1)
+    call mct_aVect_init(l2x, rList=trim(metaData%flds_lnd2x))
+    call mct_aVect_init(x2l, rList=trim(metaData%flds_x2lnd))
 
     !-------------------------------------------------------------
     ! clm -> drv 

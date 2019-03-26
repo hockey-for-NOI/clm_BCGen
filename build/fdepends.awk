@@ -40,5 +40,18 @@ BEGIN { PRLINE = NAME".o: "
         # ONLY or rename), and print it in a dependency line.
         # exclude system-installed modules (eg netcdf) from dependencies
         sub(/,/,"",$2)
-        if ( $2 != "netcdf" && $2 != "mpi" && $2 != "pio" && $2 != "mct_mod" && $2 != "time_mod" && $2 != "time_type" && $2 != "perf_mod" && $2 != "proc_def" && $2 != "global_var" && $2 != "base_field" && $2 != "ESMF" && substr($2,1,3) != "shr") print PRLINE COMPDIR "/" $2".o"
+        lwr = tolower($2)
+        if ( lwr == "netcdf") next
+        if ( lwr == "mpi") next
+        if ( lwr == "pio") next
+        if ( lwr == "mct_mod") next
+        if ( lwr == "time_mod") next
+        if ( lwr == "time_type") next
+        if ( lwr == "perf_mod") next
+        if ( lwr == "proc_def") next
+        if ( lwr == "global_var") next
+        if ( lwr == "base_field") next
+        if ( lwr == "esmf") next
+        if ( substr(lwr,1,3) == "shr" && lwr != "shr_megan_mod") next
+        print PRLINE COMPDIR "/" $2".o"
        }
