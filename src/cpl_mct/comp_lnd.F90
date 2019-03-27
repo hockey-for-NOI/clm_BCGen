@@ -1,8 +1,10 @@
 Module comp_lnd
-use mct_mod
-use time_mod
-use global_var
+use shr_kind_mod
+use shr_timer_mod
 use proc_def
+use global_var
+use time_mod, only: time_clockGetInfo, time_alarmIsOn, time_clockDateInSync
+use time_type
   
 !---------------------------------------------------------------------------
 !BOP
@@ -75,7 +77,7 @@ contains
 ! !IROUTINE: lnd_init_mct
 !
 ! !INTERFACE:
-  subroutine lnd_init_mct( compInfo, EClock, lnd2x_lndlnd, x2lnd_lndlnd, ierr)
+  subroutine lnd_init_mct( compInfo, EClock, x2lnd, lnd2x, ierr)
 !
 ! !DESCRIPTION:
 ! Initialize land surface model and obtain relevant atmospheric model arrays
@@ -108,18 +110,16 @@ contains
 !
 ! !ARGUMENTS:
     type(compMeta), target, intent(inout)       :: compInfo
-    type(Clock), intent(in)          :: EClock
-    type(AttrVect), intent(inout)    :: lnd2x_lndlnd
-    type(AttrVect), intent(inout)    :: x2lnd_lndlnd
+    type(ESMF_Clock), intent(in)          :: EClock
+    type(mct_aVect), intent(inout)    :: lnd2x
+    type(mct_aVect), intent(inout)    :: x2lnd
     integer,  intent(inout)          :: ierr
 ! !LOCAL VARIABLES:
     integer                          :: LNDID	     ! Land identifyer
     integer                          :: mpicom_lnd   ! MPI communicator
-    type(mct_gsMap),         pointer :: GSMap_lnd    ! Land model MCT GS map
     type(mct_gGrid),         pointer :: dom_l        ! Land model domain
-    type(mct_gsMap),         pointer :: GSMap_sno
     type(mct_gGrid),         pointer :: dom_s
-    type(seq_infodata_type), pointer :: infodata     ! CESM driver level info data
+    type(compMeta), pointer :: infodata              !
     integer  :: lsize                                ! size of attribute vector
     integer  :: g,i,j                                ! indices
     integer  :: dtime_sync                           ! coupling time-step from the input synchronization clock
@@ -161,8 +161,7 @@ contains
 
     ! Set cdata data
 
-    call seq_cdata_setptrs(cdata_l, ID=LNDID, mpicom=mpicom_lnd, &
-         gsMap=GSMap_lnd, dom=dom_l, infodata=infodata)
+    call compMeta_getInfo(compInfo, comm=mpicom_lnd, ID=LNDID, domain=dom_l)
 
     ! Determine attriute vector indices
 
@@ -178,10 +177,6 @@ contains
        call memmon_dump_fort('memmon.out','lnd_init_mct:start::',lbnum)
     endif
 #endif                      
-
-    inst_name   = seq_comm_name(LNDID)
-    inst_index  = seq_comm_inst(LNDID)
-    inst_suffix = seq_comm_suffix(LNDID)
 
     ! Initialize io log unit
 
@@ -202,8 +197,8 @@ contains
     
     ! Use infodata to set orbital values
 
-    call seq_infodata_GetData( infodata, orb_eccen=eccen, orb_mvelpp=mvelpp, &
-         orb_lambm0=lambm0, orb_obliqr=obliqr )
+    !call seq_infodata_GetData( infodata, orb_eccen=eccen, orb_mvelpp=mvelpp, &
+    !     orb_lambm0=lambm0, orb_obliqr=obliqr )
 
     ! Consistency check on namelist filename	
 
@@ -213,34 +208,34 @@ contains
     ! initialize1 reads namelist, grid and surface data (need this to initialize gsmap) 
     ! initialize2 performs rest of initialization	
 
-    call seq_timemgr_EClockGetData(EClock,                               &
+    call time_clockGetInfo(EClock,                               &
                                    start_ymd=start_ymd,                  &
                                    start_tod=start_tod, ref_ymd=ref_ymd, &
                                    ref_tod=ref_tod, stop_ymd=stop_ymd,   &
                                    stop_tod=stop_tod,                    &
                                    calendar=calendar )
-    call seq_infodata_GetData(infodata, perpetual=perpetual_run,                &
-                              perpetual_ymd=perpetual_ymd, case_name=caseid,    &
-                              case_desc=ctitle, single_column=single_column,    &
-                              scmlat=scmlat, scmlon=scmlon,                     &
-                              brnch_retain_casename=brnch_retain_casename,      &
-                              start_type=starttype, model_version=version,      &
-                              hostname=hostname, username=username,             &
-                              samegrid_al=samegrid_al                           &
-                                )
+    !call seq_infodata_GetData(infodata, perpetual=perpetual_run,                &
+    !                          perpetual_ymd=perpetual_ymd, case_name=caseid,    &
+    !                          case_desc=ctitle, single_column=single_column,    &
+    !                          scmlat=scmlat, scmlon=scmlon,                     &
+    !                          brnch_retain_casename=brnch_retain_casename,      &
+    !                          start_type=starttype, model_version=version,      &
+    !                          hostname=hostname, username=username,             &
+    !                          samegrid_al=samegrid_al                           &
+    !                            )
     call set_timemgr_init( calendar_in=calendar, start_ymd_in=start_ymd, start_tod_in=start_tod, &
                            ref_ymd_in=ref_ymd, ref_tod_in=ref_tod, stop_ymd_in=stop_ymd,         &
                            stop_tod_in=stop_tod,  perpetual_run_in=perpetual_run,                &
                            perpetual_ymd_in=perpetual_ymd )
-    if (     trim(starttype) == trim(seq_infodata_start_type_start)) then
+    !if (     trim(starttype) == trim(seq_infodata_start_type_start)) then
        nsrest = nsrStartup
-    else if (trim(starttype) == trim(seq_infodata_start_type_cont) ) then
-       nsrest = nsrContinue
-    else if (trim(starttype) == trim(seq_infodata_start_type_brnch)) then
-       nsrest = nsrBranch
-    else
-       call endrun( sub//' ERROR: unknown starttype' )
-    end if
+    !else if (trim(starttype) == trim(seq_infodata_start_type_cont) ) then
+    !   nsrest = nsrContinue
+    !else if (trim(starttype) == trim(seq_infodata_start_type_brnch)) then
+    !   nsrest = nsrBranch
+    !else
+    !   call endrun( sub//' ERROR: unknown starttype' )
+    !end if
 
     call set_clmvarctl(    caseid_in=caseid, ctitle_in=ctitle,                     &
                            brnch_retain_casename_in=brnch_retain_casename,         &
@@ -255,42 +250,42 @@ contains
     ! If no land then exit out of initialization
 
     if ( noland ) then
-           call seq_infodata_PutData( infodata, sno_present   =.false.)
-           call seq_infodata_PutData( infodata, lnd_present   =.false.)
-           call seq_infodata_PutData( infodata, lnd_prognostic=.false.)
+!           call seq_infodata_PutData( infodata, sno_present   =.false.)
+!           call seq_infodata_PutData( infodata, lnd_present   =.false.)
+!           call seq_infodata_PutData( infodata, lnd_prognostic=.false.)
        return
     end if
 
     ! Determine if aerosol and dust deposition come from atmosphere component
 
-    call seq_infodata_GetData(infodata, atm_aero=atm_aero )
+    !call seq_infodata_GetData(infodata, atm_aero=atm_aero )
     if ( .not. atm_aero )then
        call endrun( sub//' ERROR: atmosphere model MUST send aerosols to CLM' )
     end if
 
     ! Initialize lnd gsMap and domain
 
-    call lnd_SetgsMap_mct( mpicom_lnd, LNDID, gsMap_lnd ) 	
-    lsize = mct_gsMap_lsize(gsMap_lnd, mpicom_lnd)
-    call lnd_domain_mct( lsize, gsMap_lnd, dom_l )
+    call lnd_SetgsMap_mct( mpicom_lnd, LNDID, compInfo%comp_gsmap )
+    lsize = mct_gsMap_lsize(compInfo%comp_gsmap, mpicom_lnd)
+    call lnd_domain_mct( lsize, compInfo%comp_gsmap, dom_l )
 
     ! Initialize lnd attribute vectors coming from driver
 
-    call mct_aVect_init(x2l_l, rList=seq_flds_x2l_fields, lsize=lsize)
-    call mct_aVect_zero(x2l_l)
+    call mct_aVect_init(x2lnd, rList=trim(metaData%flds_x2lnd), lsize=lsize)
+    call mct_aVect_zero(x2lnd)
 
-    call mct_aVect_init(l2x_l, rList=seq_flds_l2x_fields, lsize=lsize)
-    call mct_aVect_zero(l2x_l)
+    call mct_aVect_init(lnd2x, rList=trim(metaData%flds_lnd2x), lsize=lsize)
+    call mct_aVect_zero(lnd2x)
 
-    call mct_aVect_init(l2x_l_SNAP, rList=seq_flds_l2x_fluxes, lsize=lsize)
+    call mct_aVect_init(l2x_l_SNAP, rList=metaData%flds_lnd2x_fluxes, lsize=lsize)
     call mct_aVect_zero(l2x_l_SNAP)
 
-    call mct_aVect_init(l2x_l_SUM , rList=seq_flds_l2x_fluxes, lsize=lsize)
+    call mct_aVect_init(l2x_l_SUM , rList=metaData%flds_lnd2x_fluxes, lsize=lsize)
     call mct_aVect_zero(l2x_l_SUM )
 
     if (masterproc) then
        write(iulog,format)'time averaging the following flux fields over the coupling interval'
-       write(iulog,format) trim(seq_flds_l2x_fluxes)
+       write(iulog,format) trim(metaData%flds_lnd2x_fluxes)
     end if
 
     ! Finish initializing clm
@@ -299,7 +294,7 @@ contains
 
     ! Check that clm internal dtime aligns with clm coupling interval
 
-    call seq_timemgr_EClockGetData(EClock, dtime=dtime_sync )
+    call time_clockGetInfo(EClock, dtime=dtime_sync )
     dtime_clm = get_step_size()
     if (masterproc) write(iulog,*)'dtime_sync= ',dtime_sync,&
          ' dtime_clm= ',dtime_clm,' mod = ',mod(dtime_sync,dtime_clm)
@@ -312,38 +307,8 @@ contains
     ! Create land export state 
 
     call get_proc_bounds(begg, endg) 
-    call lnd_export_mct( clm_l2a, l2x_l, begg, endg )
+    call lnd_export_mct( clm_l2a, lnd2x, begg, endg )
 
-    if (create_glacier_mec_landunit) then
-       call seq_cdata_setptrs(cdata_s, gsMap=gsMap_sno, dom=dom_s)
-
-       ! Initialize sno gsMap (same as gsMap_lnd)
-       call lnd_SetgsMap_mct( mpicom_lnd, LNDID, gsMap_sno )
-       lsize = mct_gsMap_lsize(gsMap_sno, mpicom_lnd)
-
-       ! Initialize sno domain (same as lnd domain)
-       call lnd_domain_mct( lsize, gsMap_sno, dom_s )
-
-       ! Initialize sno attribute vectors
-       call mct_aVect_init(x2s_s, rList=seq_flds_x2s_fields, lsize=lsize)
-       call mct_aVect_zero(x2s_s)
-
-       call mct_aVect_init(s2x_s, rList=seq_flds_s2x_fields, lsize=lsize)
-       call mct_aVect_zero(s2x_s)
-
-       ! In contrast to l2x_l_SNAP / l2x_l_SUM, for s2x we accumulate/average all fields,
-       ! not just fluxes. This is because glc wants the time-averaged tsrf field (and the
-       ! other state field, topo, is not time-varying, so it doesn't matter what we do
-       ! with that field)
-       call mct_aVect_init(s2x_s_SUM , rList=seq_flds_s2x_fields, lsize=lsize)
-       call mct_aVect_zero(s2x_s_SUM )
-
-       call mct_aVect_init(s2x_s_SNAP , rList=seq_flds_s2x_fields, lsize=lsize)
-       call mct_aVect_zero(s2x_s_SNAP )
-
-       ! Create mct sno export state
-       call sno_export_mct(clm_s2x, s2x_s)
-    endif   ! create_glacier_mec_landunit
 
     ! Initialize averaging counter
 
@@ -351,24 +316,16 @@ contains
 
     ! Fill in infodata
 
-    call seq_infodata_PutData( infodata, lnd_prognostic=.true.)
-    call seq_infodata_PutData( infodata, lnd_nx=ldomain%ni, lnd_ny=ldomain%nj)
-    if (create_glacier_mec_landunit) then
-       call seq_infodata_PutData( infodata, sno_present=.true.)
-       call seq_infodata_PutData( infodata, sno_prognostic=.false.)
-       call seq_infodata_PutData( infodata, sno_nx=ldomain%ni, sno_ny=ldomain%nj)
-    else
-       call seq_infodata_PutData( infodata, sno_present=.false.)
-       call seq_infodata_PutData( infodata, sno_prognostic=.false.)
-    endif
+    !call seq_infodata_PutData( infodata, lnd_prognostic=.true.)
+    !call seq_infodata_PutData( infodata, lnd_nx=ldomain%ni, lnd_ny=ldomain%nj)
 
-    call seq_infodata_GetData(infodata, nextsw_cday=nextsw_cday )
+    !call seq_infodata_GetData(infodata, nextsw_cday=nextsw_cday )
 
     call set_nextsw_cday( nextsw_cday )
 
     ! Determine atmosphere modes
 
-    call seq_infodata_GetData(infodata, atm_prognostic=atm_prognostic)
+    !call seq_infodata_GetData(infodata, atm_prognostic=atm_prognostic)
     if (masterproc) then
        if ( atm_prognostic )then
           write(iulog,format) 'Atmospheric input is from a prognostic model'
@@ -399,48 +356,40 @@ contains
 ! !IROUTINE: lnd_run_mct
 !
 ! !INTERFACE:
-  subroutine lnd_run_mct( EClock, cdata_l, x2l_l, l2x_l, &
-                                  cdata_s, x2s_s, s2x_s)
+  subroutine lnd_run_mct( compInfo, EClock, x2lnd, lnd2x, ierr)
 !
 ! !DESCRIPTION:
 ! Run clm model
 !
 ! !USES:
-    use shr_kind_mod    ,only : r8 => shr_kind_r8
+    use shr_kind_mod    , only : r8 => shr_kind_r8
     use clmtype
-    use clm_atmlnd      ,only : clm_l2a, clm_a2l
-    use clm_driver      ,only : clm_drv
-    use clm_time_manager,only : get_curr_date, get_nstep, get_curr_calday, get_step_size, &
+    use clm_atmlnd      , only : clm_l2a, clm_a2l
+    use clm_driver      , only : clm_drv
+    use clm_time_manager, only : get_curr_date, get_nstep, get_curr_calday, get_step_size, &
                                 advance_timestep, set_nextsw_cday,update_rad_dtime
-    use decompMod       ,only : get_proc_bounds
-    use abortutils      ,only : endrun
-    use clm_varctl      ,only : iulog, create_glacier_mec_landunit 
-    use clm_varorb      ,only : eccen, obliqr, lambm0, mvelpp
-    use shr_file_mod    ,only : shr_file_setLogUnit, shr_file_setLogLevel, &
+    use decompMod       , only : get_proc_bounds
+    use abortutils      , only : endrun
+    use clm_varctl      , only : iulog, create_glacier_mec_landunit 
+    use clm_varorb      , only : eccen, obliqr, lambm0, mvelpp
+    use shr_file_mod    , only : shr_file_setLogUnit, shr_file_setLogLevel, &
                                 shr_file_getLogUnit, shr_file_getLogLevel
-    use seq_cdata_mod   ,only : seq_cdata, seq_cdata_setptrs
-    use seq_timemgr_mod ,only : seq_timemgr_EClockGetData, seq_timemgr_StopAlarmIsOn, &
-                                seq_timemgr_RestartAlarmIsOn, seq_timemgr_EClockDateInSync
-    use seq_infodata_mod,only : seq_infodata_type, seq_infodata_GetData
-    use spmdMod         ,only : masterproc, mpicom
-    use perf_mod        ,only : t_startf, t_stopf, t_barrierf
-    use clm_glclnd      ,only : clm_s2x, clm_x2s, unpack_clm_x2s
-    use shr_orb_mod     ,only : shr_orb_decl
-    use clm_varorb      ,only : eccen, mvelpp, lambm0, obliqr
-    use clm_cpl_indices ,only : nflds_l2x, nflds_x2l
+    use spmdMod         , only : masterproc, mpicom
+    use perf_mod        , only : t_startf, t_stopf, t_barrierf
+    use clm_glclnd      , only : clm_s2x, clm_x2s, unpack_clm_x2s
+    use shr_orb_mod     , only : shr_orb_decl
+    use clm_varorb      , only : eccen, mvelpp, lambm0, obliqr
+    use clm_cpl_indices , only : nflds_l2x, nflds_x2l
     use mct_mod
     use ESMF
     implicit none
+    type(compMeta), target, intent(inout)  :: compInfo
+    type(ESMF_Clock), intent(in)          :: EClock
+    type(mct_aVect), intent(inout)    :: lnd2x
+    type(mct_aVect), intent(inout)    :: x2lnd
+    integer, intent(inout)           :: ierr    
 !
 ! !ARGUMENTS:
-    type(ESMF_Clock) , intent(in)    :: EClock    ! Input synchronization clock from driver
-    type(seq_cdata)  , intent(inout) :: cdata_l   ! Input driver data for land model
-    type(mct_aVect)  , intent(inout) :: x2l_l     ! Import state to land model
-    type(mct_aVect)  , intent(inout) :: l2x_l     ! Export state from land model
-    type(seq_cdata)  , intent(in)    :: cdata_s   ! Input driver data for snow model (land-ice)
-    type(mct_aVect)  , intent(inout) :: x2s_s     ! Import state for snow model
-    type(mct_aVect)  , intent(inout) :: s2x_s     ! Export state for snow model
-!
 ! !LOCAL VARIABLES:
     integer :: ymd_sync                   ! Sync date (YYYYMMDD)
     integer :: yr_sync                    ! Sync current year
@@ -465,8 +414,6 @@ contains
     integer :: shrlogunit,shrloglev       ! old values for share log unit and log level
     integer :: begg, endg                 ! Beginning and ending gridcell index numbers
     integer :: lbnum                      ! input to memory diagnostic
-    type(seq_infodata_type),pointer :: infodata ! CESM information from the driver
-    type(mct_gGrid),        pointer :: dom_l    ! Land model domain data
     integer  :: g,i,lsize                       ! counters
     logical,save :: first_call = .true.         ! first call work
     logical  :: glcrun_alarm          ! if true, sno data is averaged and sent to glc this step
@@ -498,18 +445,17 @@ contains
     call shr_file_setLogUnit (iulog)
 
     ! Determine time of next atmospheric shortwave calculation
-    call seq_cdata_setptrs(cdata_l, infodata=infodata, dom=dom_l)
-    call seq_timemgr_EClockGetData(EClock, &
+    call time_clockGetInfo(EClock, &
          curr_ymd=ymd, curr_tod=tod_sync,  &
          curr_yr=yr_sync, curr_mon=mon_sync, curr_day=day_sync)
-    call seq_infodata_GetData(infodata, nextsw_cday=nextsw_cday )
+    !call seq_infodata_GetData(infodata, nextsw_cday=nextsw_cday )
 
     call set_nextsw_cday( nextsw_cday )
     dtime = get_step_size()
 
     write(rdate,'(i4.4,"-",i2.2,"-",i2.2,"-",i5.5)') yr_sync,mon_sync,day_sync,tod_sync
-    nlend_sync = seq_timemgr_StopAlarmIsOn( EClock )
-    rstwr_sync = seq_timemgr_RestartAlarmIsOn( EClock )
+    nlend_sync = time_alarmIsOn(EClock, trim(alarm_stop_name))
+    rstwr_sync = time_alarmIsOn(EClock, trim(alarm_restart_name))
 
     call get_proc_bounds(begg, endg)
 
@@ -517,24 +463,16 @@ contains
     ! Perform downscaling if appropriate
 
     call t_startf ('lc_lnd_import')
-    call lnd_import_mct( x2l_l, clm_a2l, begg, endg )
+    call lnd_import_mct( x2lnd, clm_a2l, begg, endg )
     
     ! Map to clm (only when state and/or fluxes need to be updated)
 
-    if (create_glacier_mec_landunit) then
-       update_glc2sno_fields  = .false.
-       call seq_infodata_GetData(infodata, glc_g2supdate = update_glc2sno_fields)
-       if (update_glc2sno_fields) then
-          call sno_import_mct( x2s_s, clm_x2s )
-          call unpack_clm_x2s(clm_x2s)
-       endif ! update_glc2sno
-    endif ! create_glacier_mec_landunit
     call t_stopf ('lc_lnd_import')
 
     ! Use infodata to set orbital values if updated mid-run
 
-    call seq_infodata_GetData( infodata, orb_eccen=eccen, orb_mvelpp=mvelpp, &
-         orb_lambm0=lambm0, orb_obliqr=obliqr )
+    !call seq_infodata_GetData( infodata, orb_eccen=eccen, orb_mvelpp=mvelpp, &
+    !     orb_lambm0=lambm0, orb_obliqr=obliqr )
 
     ! Loop over time steps in coupling interval
 
@@ -548,7 +486,7 @@ contains
        call get_curr_date( yr, mon, day, tod )
        ymd = yr*10000 + mon*100 + day
        tod = tod
-       dosend = (seq_timemgr_EClockDateInSync( EClock, ymd, tod))
+       dosend = (time_clockDateInSync( EClock, ymd, tod))
 
        ! Determine doalb based on nextsw_cday sent from atm model
 
@@ -585,34 +523,23 @@ contains
        ! Create l2x_l export state - add river runoff input to l2x_l if appropriate
        
        call t_startf ('lc_lnd_export')
-       call lnd_export_mct( clm_l2a, l2x_l, begg, endg )
+       call lnd_export_mct( clm_l2a, lnd2x, begg, endg )
        call t_stopf ('lc_lnd_export')
 
        ! Do not accumulate on first coupling freq - consistency with ccsm3
 
        nstep = get_nstep()
        if (nstep <= 1) then
-          call mct_aVect_copy( l2x_l, l2x_l_SUM )
+          call mct_aVect_copy( lnd2x, l2x_l_SUM )
           avg_count = 1
        else
-          call mct_aVect_copy( l2x_l, l2x_l_SNAP )
+          call mct_aVect_copy( lnd2x, l2x_l_SNAP )
           call mct_aVect_accum( aVin=l2x_l_SNAP, aVout=l2x_l_SUM )
           avg_count = avg_count + 1
        endif
        
        ! Map sno data type to MCT
 
-       if (create_glacier_mec_landunit) then
-          call sno_export_mct(clm_s2x, s2x_s)
-          if (nstep <= 1) then
-             call mct_aVect_copy( s2x_s, s2x_s_SUM )
-             avg_count_sno = 1
-          else
-             call mct_aVect_copy( s2x_s, s2x_s_SNAP )
-             call mct_aVect_accum( aVin=s2x_s_SNAP, aVout=s2x_s_SUM )
-             avg_count_sno = avg_count_sno + 1
-          endif
-       endif    ! create_glacier_mec_landunit
 
        ! Advance clm time step
        
@@ -628,30 +555,18 @@ contains
        recip = 1.0_r8/(real(avg_count,r8))
        l2x_l_SUM%rAttr(:,:) = l2x_l_SUM%rAttr(:,:) * recip
     endif
-    call mct_aVect_copy( l2x_l_SUM, l2x_l )
+    call mct_aVect_copy( l2x_l_SUM, lnd2x)
     call mct_aVect_zero( l2x_l_SUM) 
     avg_count = 0                   
 
-    if (create_glacier_mec_landunit) then
-       call seq_infodata_GetData(infodata, glcrun_alarm = glcrun_alarm )
-       if (glcrun_alarm) then
-          if (avg_count_sno /= 0) then
-             recip = 1.0_r8/(real(avg_count_sno,r8))
-             s2x_s_SUM%rAttr(:,:) = s2x_s_SUM%rAttr(:,:) * recip
-          endif
-          call mct_aVect_copy( s2x_s_SUM, s2x_s )
-          call mct_aVect_zero( s2x_s_SUM)
-          avg_count_sno = 0
-       endif
-    endif
 
     ! Check that internal clock is in sync with master clock
 
     call get_curr_date( yr, mon, day, tod, offset=-dtime )
     ymd = yr*10000 + mon*100 + day
     tod = tod
-    if ( .not. seq_timemgr_EClockDateInSync( EClock, ymd, tod ) )then
-       call seq_timemgr_EclockGetData( EClock, curr_ymd=ymd_sync, curr_tod=tod_sync )
+    if ( .not. time_clockDateInSync( EClock, ymd, tod ) )then
+       call time_ClockGetInfo( EClock, curr_ymd=ymd_sync, curr_tod=tod_sync )
        write(iulog,*)' clm ymd=',ymd     ,'  clm tod= ',tod
        write(iulog,*)'sync ymd=',ymd_sync,' sync tod= ',tod_sync
        call endrun( sub//":: CLM clock not in sync with Master Sync clock" )
@@ -680,36 +595,7 @@ contains
 ! !IROUTINE: lnd_final_mct
 !
 ! !INTERFACE:
-  subroutine lnd_final_mct( EClock, cdata_l, x2l_l, l2x_l, &
-                                    cdata_s, x2s_s, s2x_s )
-!
-! !DESCRIPTION:
-! Finalize land surface model
-!
-!------------------------------------------------------------------------------
-!
-    use seq_cdata_mod   ,only : seq_cdata, seq_cdata_setptrs
-    use seq_timemgr_mod ,only : seq_timemgr_EClockGetData, seq_timemgr_StopAlarmIsOn, &
-                                seq_timemgr_RestartAlarmIsOn, seq_timemgr_EClockDateInSync
-    use mct_mod
-    use esmf
-   implicit none
-! !ARGUMENTS:
-    type(ESMF_Clock) , intent(in)    :: EClock    ! Input synchronization clock from driver
-    type(seq_cdata)  , intent(in)    :: cdata_l   ! Input driver data for land model
-    type(mct_aVect)  , intent(inout) :: x2l_l     ! Import state to land model
-    type(mct_aVect)  , intent(inout) :: l2x_l     ! Export state from land model
-    type(seq_cdata)  , intent(in)    :: cdata_s   ! Input driver data for snow model (land-ice)
-    type(mct_aVect)  , intent(inout) :: x2s_s     ! Import state for snow model
-    type(mct_aVect)  , intent(inout) :: s2x_s     ! Export state for snow model
-!
-! !REVISION HISTORY:
-! Author: Mariana Vertenstein
-!
-!EOP
-!---------------------------------------------------------------------------
-
-   ! fill this in
+  subroutine lnd_final_mct
   end subroutine lnd_final_mct
 
 !=================================================================================
@@ -1117,7 +1003,6 @@ contains
     use mct_mod     , only : mct_gsMap, mct_gGrid, mct_gGrid_importIAttr, &
                              mct_gGrid_importRAttr, mct_gGrid_init,       &
                              mct_gsMap_orderedPoints
-    use seq_flds_mod
     implicit none
 ! !ARGUMENTS:
     integer        , intent(in)    :: lsize     ! land model domain data size
@@ -1142,8 +1027,8 @@ contains
     ! lat/lon in degrees,  area in radians^2, mask is 1 (land), 0 (non-land)
     ! Note that in addition land carries around landfrac for the purposes of domain checking
     ! 
-    call mct_gGrid_init( GGrid=dom_l, CoordChars=trim(seq_flds_dom_coord), &
-       OtherChars=trim(seq_flds_dom_other), lsize=lsize )
+    call mct_gGrid_init( GGrid=dom_l, CoordChars=trim('x:y:z'), &
+       OtherChars=trim('lat:lon:area:frac:mask:aream'), lsize=lsize )
     !
     ! Allocate memory
     !
@@ -1276,4 +1161,4 @@ contains
 
 !====================================================================================
 
-end module lnd_comp_mct
+end module comp_lnd

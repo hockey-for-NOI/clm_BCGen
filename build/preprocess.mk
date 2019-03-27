@@ -48,6 +48,7 @@ SRCDIRS := $(SRCDIRS) $(CLMDIR)/src/clm4_5/biogeochem/
 SRCDIRS := $(SRCDIRS) $(CLMDIR)/src/clm4_5/biogeophys/
 SRCDIRS := $(SRCDIRS) $(CLMDIR)/src/clm4_5/main/
 SRCDIRS := $(SRCDIRS) $(CLMDIR)/src/cpl_share/
+SRCDIRS := $(SRCDIRS) $(CLMDIR)/src/cpl_mct/
 SRCDIRS := $(SRCDIRS) $(CLMDIR)/src/util_share/
 SRCDIRS := $(SRCDIRS) $(CLMDIR)/src/cpl7_deps/
 
