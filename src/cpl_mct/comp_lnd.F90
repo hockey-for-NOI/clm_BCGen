@@ -146,7 +146,7 @@ contains
     integer :: stop_ymd                              ! stop date (YYYYMMDD)
     integer :: stop_tod                              ! stop time of day (sec)
     logical :: brnch_retain_casename                 ! flag if should retain the case name on a branch start type
-    logical :: perpetual_run                         ! flag if should cycle over a perpetual date or not
+    logical :: perpetual_run = .false.               ! flag if should cycle over a perpetual date or not
     integer :: lbnum                                 ! input to memory diagnostic
     integer :: shrlogunit,shrloglev                  ! old values for log unit and log level
     integer :: begg, endg
@@ -202,7 +202,7 @@ contains
 
     ! Consistency check on namelist filename	
 
-    call control_setNL("lnd_in"//trim(inst_suffix))
+    call control_setNL("/home/hq/share/BCGen_case/BCGen_inst/conf/lnd_in"//trim(inst_suffix))
 
     ! Initialize clm
     ! initialize1 reads namelist, grid and surface data (need this to initialize gsmap) 
@@ -225,7 +225,7 @@ contains
     !                            )
     call set_timemgr_init( calendar_in=calendar, start_ymd_in=start_ymd, start_tod_in=start_tod, &
                            ref_ymd_in=ref_ymd, ref_tod_in=ref_tod, stop_ymd_in=stop_ymd,         &
-                           stop_tod_in=stop_tod,  perpetual_run_in=perpetual_run,                &
+                           stop_tod_in=stop_tod,  perpetual_run_in=.false., &
                            perpetual_ymd_in=perpetual_ymd )
     !if (     trim(starttype) == trim(seq_infodata_start_type_start)) then
        nsrest = nsrStartup
