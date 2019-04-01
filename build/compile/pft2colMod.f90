@@ -75,10 +75,10 @@ contains
 
     ! Note: lake points are excluded from many of the following averages. For some fields,
     ! this is because the field doesn't apply over lakes. However, for many others, this
-    ! is because the field is computed in SLakeHydrologyMod, which is called after this
+    ! is because the field is computed in HydrologyLake, which is called after this
     ! routine; thus, for lakes, the column-level values of these fields are explicitly set
-    ! in SLakeHydrologyMod. (The fields that are included here for lakes are computed
-    ! elsewhere, e.g., in SLakeFluxesMod.)
+    ! in HydrologyLakeMod. (The fields that are included here for lakes are computed
+    ! elsewhere, e.g., in BiogeophysicsLake.)
 
     ! Averaging for pft water state variables
 
@@ -87,22 +87,6 @@ contains
     call p2c (num_nolakec, filter_nolakec, ptrp, ptrc)
 
     ! Averaging for pft water flux variables
-
-    ptrp => pwf%qflx_ev_snow
-    ptrc => pwf_a%qflx_ev_snow
-    call p2c (num_nolakec, filter_nolakec, ptrp, ptrc)
-
-    ptrp => pwf%qflx_ev_soil
-    ptrc => pwf_a%qflx_ev_soil
-    call p2c (num_nolakec, filter_nolakec, ptrp, ptrc)
-
-    ptrp => pwf%qflx_ev_h2osfc
-    ptrc => pwf_a%qflx_ev_h2osfc
-    call p2c (num_nolakec, filter_nolakec, ptrp, ptrc)
-
-    ptrp => pwf%qflx_evap_soi
-    ptrc => pwf_a%qflx_evap_soi
-    call p2c (num_nolakec, filter_nolakec, ptrp, ptrc)
 
     ptrp => pwf%qflx_evap_tot
     ptrc => pwf_a%qflx_evap_tot
@@ -122,9 +106,9 @@ contains
 
     ptrp => pwf%qflx_snwcp_ice
     ptrc => pwf_a%qflx_snwcp_ice
-    ! For lakes, this field is initially set in SLakeFluxesMod (which is called before
+    ! For lakes, this field is initially set in BiogeophysicsLake (which is called before
     ! this routine; hence it is appropriate to include lake columns in this p2c call).
-    ! However, it is later overwritten in SLakeHydrologyMod, both on the pft and the column
+    ! However, it is later overwritten in HydrologyLake, both on the pft and the column
     ! level.
     call p2c (num_allc, filter_allc, ptrp, ptrc)
 

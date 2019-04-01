@@ -70,7 +70,7 @@ contains
 !
 ! local pointers to original implicit in variables
 !
-    logical , pointer :: pactive(:)            ! true=>do computations on this pft (see reweightMod for details)
+    real(r8), pointer :: pwtgcell(:)           ! weight of pft wrt corresponding gridcell
     integer , pointer :: snl(:)                ! number of snow layers
     real(r8), pointer :: h2osno(:)             ! snow water (mm H2O)
     integer , pointer :: frac_veg_nosno_alb(:) ! fraction of vegetation not covered by snow (0 OR 1) [-]
@@ -87,7 +87,7 @@ contains
 ! !OTHER LOCAL VARIABLES:
 !EOP
 !
-    integer :: g, l, c, p, f, j, fc         ! indices
+    integer :: g, l, c, p, f, j, fc            ! indices
 
     real(r8), pointer :: qflx_glcice(:)     ! flux of new glacier ice (mm H2O/s) [+ = ice grows]
     real(r8), pointer :: eflx_bot(:)        ! heat flux from beneath soil/ice column (W/m**2)
@@ -134,13 +134,13 @@ contains
     forc_q             => cws%forc_q
     forc_pbot          => cps%forc_pbot
     forc_rho           => cps%forc_rho
-    clandunit          =>col%landunit
-    cgridcell          =>col%gridcell
+    clandunit          => col%landunit
+    cgridcell          => col%gridcell
 
     ! Assign local pointers to derived type members (pft-level)
 
-    pactive            => pft%active
-    plandunit          =>pft%landunit
+    pwtgcell           => pft%wtgcell
+    plandunit          => pft%landunit
 
     do c = lbc, ubc
 
@@ -176,7 +176,9 @@ contains
     ! Initialize fraction of vegetation not covered by snow (pft-level)
 
     do p = lbp,ubp
-       if (pactive(p)) then
+       l = plandunit(p)
+       ! Note: Some glacier_mec points may have zero weight
+       if (pwtgcell(p)>0._r8 .or. ityplun(l) == istice_mec) then
           frac_veg_nosno(p) = frac_veg_nosno_alb(p)
        else
           frac_veg_nosno(p) = 0._r8

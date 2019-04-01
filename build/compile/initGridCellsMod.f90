@@ -33,7 +33,6 @@ module initGridCellsMod
   private set_landunit_veg_compete
   private set_landunit_wet_ice_lake
   private set_landunit_crop_noncompete
-  private set_landunit_urban
 !
 ! !REVISION HISTORY:
 ! Created by Mariana Vertenstein
@@ -61,8 +60,7 @@ contains
     use clmtype 
     use domainMod   , only : ldomain
     use decompMod   , only : ldecomp, get_proc_global, get_proc_bounds
-    use clm_varcon  , only : istsoil, istice, istwet, istdlak, isturb, istice_mec, &
-                             udens_tbd, udens_hd, udens_md
+    use clm_varcon  , only : istsoil, istice, istwet, istdlak, isturb, istice_mec
     use clm_varctl  , only : create_glacier_mec_landunit
     use clm_varcon  , only : istcrop
     use subgridMod  , only : subgrid_get_gcellinfo
@@ -104,10 +102,18 @@ contains
     logical :: my_gcell       ! is gdc gridcell on my pe
     integer :: nwtxy          ! wtxy cell index
 
+    type(gridcell_type), pointer  :: gptr ! pointer to gridcell derived subtype
+    type(landunit_type), pointer  :: lptr ! pointer to landunit derived subtype
+    type(column_type)  , pointer  :: cptr ! pointer to column derived subtype
+    type(pft_type)     , pointer  :: pptr ! pointer to pft derived subtype
  !------------------------------------------------------------------------
 
     ! Set pointers into derived types for this module
 
+    gptr => grc
+    lptr => lun
+    cptr => col
+    pptr => pft
 
     ! Get total global number of grid cells, landunits, columns and pfts 
     
@@ -149,25 +155,11 @@ contains
             ltype=ltype, &
             nw=nwtxy, gi=gdc, li=li, ci=ci, pi=pi, setdata=my_gcell)
 
-       ! Determine urban tall building district landunit
+       ! Determine urban landunit
 
        call set_landunit_urban( &
 !           ltype=isturb, wtxy=wtxy, vegxy=vegxy,   &
-            ltype=isturb, udenstype=udens_tbd, &
-            nw=nwtxy, gi=gdc, li=li, ci=ci, pi=pi, setdata=my_gcell)
-
-       ! Determine urban high density landunit
-
-       call set_landunit_urban( &
-!           ltype=isturb, wtxy=wtxy, vegxy=vegxy,   &
-            ltype=isturb, udenstype=udens_hd, &
-            nw=nwtxy, gi=gdc, li=li, ci=ci, pi=pi, setdata=my_gcell)
-
-       ! Determine urban medium density landunit
-
-       call set_landunit_urban( &
-!           ltype=isturb, wtxy=wtxy, vegxy=vegxy,   &
-            ltype=isturb, udenstype=udens_md, &
+            ltype=isturb, &
             nw=nwtxy, gi=gdc, li=li, ci=ci, pi=pi, setdata=my_gcell)
 
        ! Determine lake, wetland and glacier landunits 
@@ -193,10 +185,10 @@ contains
 
        ! Make ice sheet masks
 
-       grc%gris_mask(gdc) = 0._r8
-       grc%gris_area(gdc) = 0._r8
-       grc%aais_mask(gdc) = 0._r8
-       grc%aais_area(gdc) = 0._r8
+       gptr%gris_mask(gdc) = 0._r8
+       gptr%gris_area(gdc) = 0._r8
+       gptr%aais_mask(gdc) = 0._r8
+       gptr%aais_area(gdc) = 0._r8
       
        ! Greenland mask
        if ( (ldomain%latc(gdc) >  58. .and. ldomain%latc(gdc) <= 67.  .and.   &
@@ -214,23 +206,23 @@ contains
             (ldomain%latc(gdc) >  79. .and. ldomain%latc(gdc) <  85. .and.    &
              ldomain%lonc(gdc) > 290. .and. ldomain%lonc(gdc) < 355.) ) then
  
-            grc%gris_mask(gdc) = 1.0_r8
+            gptr%gris_mask(gdc) = 1.0_r8
 
       elseif (ldomain%latc(gdc) < -60.) then
 
-            grc%aais_mask(gdc) = 1.0_r8
+            gptr%aais_mask(gdc) = 1.0_r8
 
        endif  ! Greenland or Antarctic grid cell
 
        ! Set clm3 lats/lons
 
        if (my_gcell) then
-          grc%gindex(gdc) = glo
-          grc%latdeg(gdc) = ldomain%latc(gdc) 
-          grc%londeg(gdc) = ldomain%lonc(gdc) 
-          grc%lat(gdc)    = grc%latdeg(gdc) * SHR_CONST_PI/180._r8  
-          grc%lon(gdc)    = grc%londeg(gdc) * SHR_CONST_PI/180._r8
-          grc%area(gdc)   = ldomain%area(gdc)
+          gptr%gindex(gdc) = glo
+          gptr%latdeg(gdc) = ldomain%latc(gdc) 
+          gptr%londeg(gdc) = ldomain%lonc(gdc) 
+          gptr%lat(gdc)    = gptr%latdeg(gdc) * SHR_CONST_PI/180._r8  
+          gptr%lon(gdc)    = gptr%londeg(gdc) * SHR_CONST_PI/180._r8
+          gptr%area(gdc)   = ldomain%area(gdc)
        endif
 
     enddo
@@ -284,9 +276,17 @@ contains
     integer :: begg,endg,begl,endl,begc,endc,begp,endp ! beg/end glcp
     integer :: g,l,c,p               ! loop counters
     integer :: curg,curl,curc,curp   ! tracks g,l,c,p indexes in arrays
+    type(gridcell_type), pointer  :: gptr ! pointer to gridcell derived subtype
+    type(landunit_type), pointer  :: lptr ! pointer to landunit derived subtype
+    type(column_type)  , pointer  :: cptr ! pointer to column derived subtype
+    type(pft_type)     , pointer  :: pptr ! pointer to pft derived subtype
 !EOP
 !------------------------------------------------------------------------------
 
+    gptr => grc
+    lptr => lun
+    cptr => col
+    pptr => pft
 
     call get_proc_bounds(begg,endg,begl,endl,begc,endc,begp,endp)
 
@@ -307,75 +307,75 @@ contains
     curl = 0
     curg = 0
     do p = begp,endp
-       if (pft%column(p) /= curc) then
-          curc = pft%column(p)
+       if (pptr%column(p) /= curc) then
+          curc = pptr%column(p)
           if (curc < begc .or. curc > endc) then
              write(iulog,*) 'clm_ptrs_compdown ERROR: pcolumn ',p,curc,begc,endc
              call endrun()
           endif
-          col%pfti(curc) = p
+          cptr%pfti(curc) = p
        endif
-       col%pftf(curc) = p
-       col%npfts(curc) = col%pftf(curc) - col%pfti(curc) + 1
-       if (pft%landunit(p) /= curl) then
-          curl = pft%landunit(p)
+       cptr%pftf(curc) = p
+       cptr%npfts(curc) = cptr%pftf(curc) - cptr%pfti(curc) + 1
+       if (pptr%landunit(p) /= curl) then
+          curl = pptr%landunit(p)
           if (curl < begl .or. curl > endl) then
              write(iulog,*) 'clm_ptrs_compdown ERROR: plandunit ',p,curl,begl,endl
              call endrun()
           endif
-          lun%pfti(curl) = p
+          lptr%pfti(curl) = p
        endif
-       lun%pftf(curl) = p
-       lun%npfts(curl) = lun%pftf(curl) - lun%pfti(curl) + 1
-       if (pft%gridcell(p) /= curg) then
-          curg = pft%gridcell(p)
+       lptr%pftf(curl) = p
+       lptr%npfts(curl) = lptr%pftf(curl) - lptr%pfti(curl) + 1
+       if (pptr%gridcell(p) /= curg) then
+          curg = pptr%gridcell(p)
           if (curg < begg .or. curg > endg) then
              write(iulog,*) 'clm_ptrs_compdown ERROR: pgridcell ',p,curg,begg,endg
              call endrun()
           endif
-          grc%pfti(curg) = p
+          gptr%pfti(curg) = p
        endif
-       grc%pftf(curg) = p
-       grc%npfts(curg) = grc%pftf(curg) - grc%pfti(curg) + 1
+       gptr%pftf(curg) = p
+       gptr%npfts(curg) = gptr%pftf(curg) - gptr%pfti(curg) + 1
     enddo
 
     curg = 0
     curl = 0
     do c = begc,endc
-       if (col%landunit(c) /= curl) then
-          curl = col%landunit(c)
+       if (cptr%landunit(c) /= curl) then
+          curl = cptr%landunit(c)
           if (curl < begl .or. curl > endl) then
              write(iulog,*) 'clm_ptrs_compdown ERROR: clandunit ',c,curl,begl,endl
              call endrun()
           endif
-          lun%coli(curl) = c
+          lptr%coli(curl) = c
        endif
-       lun%colf(curl) = c
-       lun%ncolumns(curl) = lun%colf(curl) - lun%coli(curl) + 1
-       if (col%gridcell(c) /= curg) then
-          curg = col%gridcell(c)
+       lptr%colf(curl) = c
+       lptr%ncolumns(curl) = lptr%colf(curl) - lptr%coli(curl) + 1
+       if (cptr%gridcell(c) /= curg) then
+          curg = cptr%gridcell(c)
           if (curg < begg .or. curg > endg) then
              write(iulog,*) 'clm_ptrs_compdown ERROR: cgridcell ',c,curg,begg,endg
              call endrun()
           endif
-          grc%coli(curg) = c
+          gptr%coli(curg) = c
        endif
-       grc%colf(curg) = c
-       grc%ncolumns(curg) = grc%colf(curg) - grc%coli(curg) + 1
+       gptr%colf(curg) = c
+       gptr%ncolumns(curg) = gptr%colf(curg) - gptr%coli(curg) + 1
     enddo
 
     curg = 0
     do l = begl,endl
-       if (lun%gridcell(l) /= curg) then
-          curg = lun%gridcell(l)
+       if (lptr%gridcell(l) /= curg) then
+          curg = lptr%gridcell(l)
           if (curg < begg .or. curg > endg) then
              write(iulog,*) 'clm_ptrs_compdown ERROR: lgridcell ',l,curg,begg,endg
              call endrun()
           endif
-          grc%luni(curg) = l
+          gptr%luni(curg) = l
        endif
-       grc%lunf(curg) = l
-       grc%nlandunits(curg) = grc%lunf(curg) - grc%luni(curg) + 1
+       gptr%lunf(curg) = l
+       gptr%nlandunits(curg) = gptr%lunf(curg) - gptr%luni(curg) + 1
     enddo
 
     end subroutine clm_ptrs_compdown
@@ -404,12 +404,20 @@ contains
 !
 !
 ! !LOCAL VARIABLES:
+    type(gridcell_type), pointer  :: gptr ! pointer to gridcell derived subtype
+    type(landunit_type), pointer  :: lptr ! pointer to landunit derived subtype
+    type(column_type)  , pointer  :: cptr ! pointer to column derived subtype
+    type(pft_type)     , pointer  :: pptr ! pointer to pft derived subtype
     integer :: begg,endg,begl,endl,begc,endc,begp,endp   ! beg/end indices
     integer :: g,l,c,p       ! loop counters
     logical :: error         ! error flag
 !EOP
 !------------------------------------------------------------------------------
 
+    gptr => grc
+    lptr => lun
+    cptr => col
+    pptr => pft
     
     if (masterproc) write(iulog,*) ' '
     if (masterproc) write(iulog,*) '---clm_ptrs_check:'
@@ -417,31 +425,31 @@ contains
 
     !--- check index ranges ---
     error = .false.
-    if (minval(grc%luni) < begl .or. maxval(grc%luni) > endl) error=.true.
-    if (minval(grc%lunf) < begl .or. maxval(grc%lunf) > endl) error=.true.
-    if (minval(grc%coli) < begc .or. maxval(grc%coli) > endc) error=.true.
-    if (minval(grc%colf) < begc .or. maxval(grc%colf) > endc) error=.true.
-    if (minval(grc%pfti) < begp .or. maxval(grc%pfti) > endp) error=.true.
-    if (minval(grc%pftf) < begp .or. maxval(grc%pftf) > endp) error=.true.
+    if (minval(gptr%luni) < begl .or. maxval(gptr%luni) > endl) error=.true.
+    if (minval(gptr%lunf) < begl .or. maxval(gptr%lunf) > endl) error=.true.
+    if (minval(gptr%coli) < begc .or. maxval(gptr%coli) > endc) error=.true.
+    if (minval(gptr%colf) < begc .or. maxval(gptr%colf) > endc) error=.true.
+    if (minval(gptr%pfti) < begp .or. maxval(gptr%pfti) > endp) error=.true.
+    if (minval(gptr%pftf) < begp .or. maxval(gptr%pftf) > endp) error=.true.
     if (error) then
        write(iulog,*) '   clm_ptrs_check: g index ranges - ERROR'
        write(iulog,*)'minval,beg,maxval,end'
-       write(iulog,*) minval(grc%luni),begl,maxval(grc%luni),endl
-       write(iulog,*) minval(grc%lunf),begl,maxval(grc%lunf),endl
-       write(iulog,*) minval(grc%coli),begc,maxval(grc%coli),endc
-       write(iulog,*) minval(grc%colf),begc,maxval(grc%colf),endc
-       write(iulog,*) minval(grc%pfti),begp,maxval(grc%pfti),endp
-       write(iulog,*) minval(grc%pftf),begp,maxval(grc%pftf),endp
+       write(iulog,*) minval(gptr%luni),begl,maxval(gptr%luni),endl
+       write(iulog,*) minval(gptr%lunf),begl,maxval(gptr%lunf),endl
+       write(iulog,*) minval(gptr%coli),begc,maxval(gptr%coli),endc
+       write(iulog,*) minval(gptr%colf),begc,maxval(gptr%colf),endc
+       write(iulog,*) minval(gptr%pfti),begp,maxval(gptr%pfti),endp
+       write(iulog,*) minval(gptr%pftf),begp,maxval(gptr%pftf),endp
        call endrun()
     endif
     if (masterproc) write(iulog,*) '   clm_ptrs_check: g index ranges - OK'
 
     error = .false.
-    if (minval(lun%gridcell) < begg .or. maxval(lun%gridcell) > endg) error=.true.
-    if (minval(lun%coli) < begc .or. maxval(lun%coli) > endc) error=.true.
-    if (minval(lun%colf) < begc .or. maxval(lun%colf) > endc) error=.true.
-    if (minval(lun%pfti) < begp .or. maxval(lun%pfti) > endp) error=.true.
-    if (minval(lun%pftf) < begp .or. maxval(lun%pftf) > endp) error=.true.
+    if (minval(lptr%gridcell) < begg .or. maxval(lptr%gridcell) > endg) error=.true.
+    if (minval(lptr%coli) < begc .or. maxval(lptr%coli) > endc) error=.true.
+    if (minval(lptr%colf) < begc .or. maxval(lptr%colf) > endc) error=.true.
+    if (minval(lptr%pfti) < begp .or. maxval(lptr%pfti) > endp) error=.true.
+    if (minval(lptr%pftf) < begp .or. maxval(lptr%pftf) > endp) error=.true.
     if (error) then
        write(iulog,*) '   clm_ptrs_check: l index ranges - ERROR'
        call endrun()
@@ -449,10 +457,10 @@ contains
     if (masterproc) write(iulog,*) '   clm_ptrs_check: l index ranges - OK'
 
     error = .false.
-    if (minval(col%gridcell) < begg .or. maxval(col%gridcell) > endg) error=.true.
-    if (minval(col%landunit) < begl .or. maxval(col%landunit) > endl) error=.true.
-    if (minval(col%pfti) < begp .or. maxval(col%pfti) > endp) error=.true.
-    if (minval(col%pftf) < begp .or. maxval(col%pftf) > endp) error=.true.
+    if (minval(cptr%gridcell) < begg .or. maxval(cptr%gridcell) > endg) error=.true.
+    if (minval(cptr%landunit) < begl .or. maxval(cptr%landunit) > endl) error=.true.
+    if (minval(cptr%pfti) < begp .or. maxval(cptr%pfti) > endp) error=.true.
+    if (minval(cptr%pftf) < begp .or. maxval(cptr%pftf) > endp) error=.true.
     if (error) then
        write(iulog,*) '   clm_ptrs_check: c index ranges - ERROR'
        call endrun()
@@ -460,9 +468,9 @@ contains
     if (masterproc) write(iulog,*) '   clm_ptrs_check: c index ranges - OK'
 
     error = .false.
-    if (minval(pft%gridcell) < begg .or. maxval(pft%gridcell) > endg) error=.true.
-    if (minval(pft%landunit) < begl .or. maxval(pft%landunit) > endl) error=.true.
-    if (minval(pft%column) < begc .or. maxval(pft%column) > endc) error=.true.
+    if (minval(pptr%gridcell) < begg .or. maxval(pptr%gridcell) > endg) error=.true.
+    if (minval(pptr%landunit) < begl .or. maxval(pptr%landunit) > endl) error=.true.
+    if (minval(pptr%column) < begc .or. maxval(pptr%column) > endc) error=.true.
     if (error) then
        write(iulog,*) '   clm_ptrs_check: p index ranges - ERROR'
        call endrun()
@@ -472,12 +480,12 @@ contains
     !--- check that indices in arrays are monotonically increasing ---
     error = .false.
     do g=begg+1,endg
-      if (grc%luni(g) < grc%luni(g-1)) error = .true.
-      if (grc%lunf(g) < grc%lunf(g-1)) error = .true.
-      if (grc%coli(g) < grc%coli(g-1)) error = .true.
-      if (grc%colf(g) < grc%colf(g-1)) error = .true.
-      if (grc%pfti(g) < grc%pfti(g-1)) error = .true.
-      if (grc%pftf(g) < grc%pftf(g-1)) error = .true.
+      if (gptr%luni(g) < gptr%luni(g-1)) error = .true.
+      if (gptr%lunf(g) < gptr%lunf(g-1)) error = .true.
+      if (gptr%coli(g) < gptr%coli(g-1)) error = .true.
+      if (gptr%colf(g) < gptr%colf(g-1)) error = .true.
+      if (gptr%pfti(g) < gptr%pfti(g-1)) error = .true.
+      if (gptr%pftf(g) < gptr%pftf(g-1)) error = .true.
       if (error) then
          write(iulog,*) '   clm_ptrs_check: g mono increasing - ERROR'
          call endrun()
@@ -487,11 +495,11 @@ contains
 
     error = .false.
     do l=begl+1,endl
-      if (lun%gridcell(l) < lun%gridcell(l-1)) error = .true.
-      if (lun%coli(l) < lun%coli(l-1)) error = .true.
-      if (lun%colf(l) < lun%colf(l-1)) error = .true.
-      if (lun%pfti(l) < lun%pfti(l-1)) error = .true.
-      if (lun%pftf(l) < lun%pftf(l-1)) error = .true.
+      if (lptr%gridcell(l) < lptr%gridcell(l-1)) error = .true.
+      if (lptr%coli(l) < lptr%coli(l-1)) error = .true.
+      if (lptr%colf(l) < lptr%colf(l-1)) error = .true.
+      if (lptr%pfti(l) < lptr%pfti(l-1)) error = .true.
+      if (lptr%pftf(l) < lptr%pftf(l-1)) error = .true.
       if (error) then
          write(iulog,*) '   clm_ptrs_check: l mono increasing - ERROR'
          call endrun()
@@ -501,10 +509,10 @@ contains
 
     error = .false.
     do c=begc+1,endc
-      if (col%gridcell(c) < col%gridcell(c-1)) error = .true.
-      if (col%landunit(c) < col%landunit(c-1)) error = .true.
-      if (col%pfti(c) < col%pfti(c-1)) error = .true.
-      if (col%pftf(c) < col%pftf(c-1)) error = .true.
+      if (cptr%gridcell(c) < cptr%gridcell(c-1)) error = .true.
+      if (cptr%landunit(c) < cptr%landunit(c-1)) error = .true.
+      if (cptr%pfti(c)     < cptr%pfti(c-1)) error = .true.
+      if (cptr%pftf(c)     < cptr%pftf(c-1)) error = .true.
       if (error) then
          write(iulog,*) '   clm_ptrs_check: c mono increasing - ERROR'
          call endrun()
@@ -514,9 +522,9 @@ contains
 
     error = .false.
     do p=begp+1,endp
-      if (pft%gridcell(p) < pft%gridcell(p-1)) error = .true.
-      if (pft%landunit(p) < pft%landunit(p-1)) error = .true.
-      if (pft%column  (p) < pft%column  (p-1)) error = .true.
+      if (pptr%gridcell(p) < pptr%gridcell(p-1)) error = .true.
+      if (pptr%landunit(p) < pptr%landunit(p-1)) error = .true.
+      if (pptr%column  (p) < pptr%column  (p-1)) error = .true.
       if (error) then
          write(iulog,*) '   clm_ptrs_check: p mono increasing - ERROR'
          call endrun()
@@ -527,15 +535,15 @@ contains
     !--- check that the tree is internally consistent ---
     error = .false.
     do g = begg, endg
-       do l = grc%luni(g),grc%lunf(g)
-          if (lun%gridcell(l) /= g) error = .true.
-          do c = lun%coli(l),lun%colf(l)
-             if (col%gridcell(c) /= g) error = .true.
-             if (col%landunit(c) /= l) error = .true.
-             do p = col%pfti(c),col%pftf(c)
-                if (pft%gridcell(p) /= g) error = .true.
-                if (pft%landunit(p) /= l) error = .true.
-                if (pft%column(p)   /= c) error = .true.
+       do l = gptr%luni(g),gptr%lunf(g)
+          if (lptr%gridcell(l) /= g) error = .true.
+          do c = lptr%coli(l),lptr%colf(l)
+             if (cptr%gridcell(c) /= g) error = .true.
+             if (cptr%landunit(c) /= l) error = .true.
+             do p = cptr%pfti(c),cptr%pftf(c)
+                if (pptr%gridcell(p) /= g) error = .true.
+                if (pptr%landunit(p) /= l) error = .true.
+                if (pptr%column(p)   /= c) error = .true.
                 if (error) then
                    write(iulog,*) '   clm_ptrs_check: tree consistent - ERROR'
                    call endrun()
@@ -592,6 +600,9 @@ end subroutine clm_ptrs_check
     integer  :: ncols                            ! number of columns in landu
     integer  :: pitype                           ! pft itype
     real(r8) :: wtlunit2gcell                    ! landunit weight in gridcell
+    type(landunit_type), pointer :: lptr         ! pointer to landunit
+    type(column_type)  , pointer :: cptr         ! pointer to column
+    type(pft_type)     , pointer :: pptr         ! pointer to pft
 
 !------------------------------------------------------------------------
 
@@ -604,6 +615,9 @@ end subroutine clm_ptrs_check
 
        ! Set pointers into derived types for this module
 
+       lptr => lun
+       cptr => col
+       pptr => pft
 
        ncols = 1
        
@@ -612,21 +626,21 @@ end subroutine clm_ptrs_check
 
        if (setdata) then
           ! Set landunit properties
-          lun%ifspecial(li) = .false.
-          lun%lakpoi(li)    = .false.
-          lun%urbpoi(li)    = .false.
-          lun%itype(li)     = ltype
+          lptr%ifspecial(li) = .false.
+          lptr%lakpoi(li)    = .false.
+          lptr%urbpoi(li)    = .false.
+          lptr%itype(li)     = ltype
        
-          lun%gridcell (li) = gi
-          lun%wtgcell(li) = wtlunit2gcell
+          lptr%gridcell (li) = gi
+          lptr%wtgcell(li) = wtlunit2gcell
 
           ! Set column properties for this landunit (only one column on landunit)
-          col%itype(ci)    = 1
+          cptr%itype(ci)    = 1
       
-          col%gridcell (ci) = gi
-          col%wtgcell(ci) = wtlunit2gcell
-          col%landunit (ci) = li
-          col%wtlunit(ci) = 1.0_r8
+          cptr%gridcell (ci) = gi
+          cptr%wtgcell(ci) = wtlunit2gcell
+          cptr%landunit (ci) = li
+          cptr%wtlunit(ci) = 1.0_r8
        endif ! setdata
 
        ! Set pft properties for this landunit
@@ -636,32 +650,21 @@ end subroutine clm_ptrs_check
              pi = pi + 1
              pitype = n-1
              if (setdata) then
-                pft%mxy(pi)      = n
-                pft%itype(pi)    = pitype
-                pft%gridcell(pi) = gi
-                pft%landunit(pi) = li
-                pft%column (pi) = ci
-
-                if (wtlunit2gcell > 0._r8) then
-                   pft%wtgcell(pi) = 0.0_r8
-                   pft%wtlunit(pi) = 0.0_r8
-                   pft%wtcol(pi) = 0.0_r8
-                   do m = 1,maxpatch_pft
-                      if (vegxy(nw,m) == pitype) then
-                         pft%wtgcell(pi)  = pft%wtgcell(pi) + wtxy(nw,m)
-                         pft%wtlunit(pi)  = pft%wtlunit(pi) + wtxy(nw,m) / wtlunit2gcell
-                         pft%wtcol(pi)  = pft%wtcol(pi) + wtxy(nw,m) / wtlunit2gcell
-                      end if
-                   end do
-                else  ! wtlunit2gcell == 0._r8
-                   ! TODO WJS: Temporarily setting this to equal weighting for all
-                   ! pfts. In the future, we could potentially get some info about this
-                   ! from the surface dataset, if it is changed to give pct_pft as % of
-                   ! the pft on the landunit
-                   pft%wtgcell(pi) = 0._r8
-                   pft%wtlunit(pi) = 1._r8 / (numpft+1-numcft)
-                   pft%wtcol(pi)   = 1._r8 / (numpft+1-numcft)
-                end if
+                pptr%mxy(pi)      = n
+                pptr%itype(pi)    = pitype
+                pptr%gridcell(pi) = gi
+                pptr%landunit(pi) = li
+                pptr%column (pi) = ci
+                pptr%wtgcell(pi) = 0.0_r8
+                pptr%wtlunit(pi) = 0.0_r8
+                pptr%wtcol(pi) = 0.0_r8
+                do m = 1,maxpatch_pft
+                   if (vegxy(nw,m) == pitype .and. wtxy(nw,m) > 0._r8) then
+                      pptr%wtgcell(pi)  = pptr%wtgcell(pi) + wtxy(nw,m)
+                      pptr%wtlunit(pi)  = pptr%wtlunit(pi) + wtxy(nw,m) / wtlunit2gcell
+                      pptr%wtcol(pi)  = pptr%wtcol(pi) + wtxy(nw,m) / wtlunit2gcell
+                   end if
+                end do
              endif ! setdata
           end do
        else if (allocate_all_vegpfts) then
@@ -669,37 +672,39 @@ end subroutine clm_ptrs_check
              pi = pi + 1
              pitype = n-1
              if (setdata) then
-                pft%mxy(pi)      = n
-                pft%itype(pi)    = pitype
-                pft%gridcell(pi) = gi
-                pft%landunit(pi) = li
-                pft%column (pi) = ci
-
-                if (wtlunit2gcell > 0._r8) then
-                   pft%wtgcell(pi) = 0.0_r8
-                   pft%wtlunit(pi) = 0.0_r8
-                   pft%wtcol(pi) = 0.0_r8
-                   do m = 1,maxpatch_pft
-                      if (vegxy(nw,m) == pitype) then
-                         pft%wtgcell(pi)  = pft%wtgcell(pi) + wtxy(nw,m)
-                         pft%wtlunit(pi)  = pft%wtlunit(pi) + wtxy(nw,m) / wtlunit2gcell
-                         pft%wtcol(pi)  = pft%wtcol(pi) + wtxy(nw,m) / wtlunit2gcell
-                      end if
-                   end do
-                else  ! wtlunit2gcell == 0._r8
-                   ! TODO WJS: Temporarily setting this to equal weighting for all
-                   ! pfts. In the future, we could potentially get some info about this
-                   ! from the surface dataset, if it is changed to give pct_pft as % of
-                   ! the pft on the landunit
-                   pft%wtgcell(pi) = 0._r8
-                   pft%wtlunit(pi) = 1._r8 / (numpft+1)
-                   pft%wtcol(pi)   = 1._r8 / (numpft+1)
-                end if
+                pptr%mxy(pi)      = n
+                pptr%itype(pi)    = pitype
+                pptr%gridcell(pi) = gi
+                pptr%landunit(pi) = li
+                pptr%column (pi) = ci
+                pptr%wtgcell(pi) = 0.0_r8
+                pptr%wtlunit(pi) = 0.0_r8
+                pptr%wtcol(pi) = 0.0_r8
+                do m = 1,maxpatch_pft
+                   if (vegxy(nw,m) == pitype .and. wtxy(nw,m) > 0._r8) then
+                      pptr%wtgcell(pi)  = pptr%wtgcell(pi) + wtxy(nw,m)
+                      pptr%wtlunit(pi)  = pptr%wtlunit(pi) + wtxy(nw,m) / wtlunit2gcell
+                      pptr%wtcol(pi)  = pptr%wtcol(pi) + wtxy(nw,m) / wtlunit2gcell
+                   end if
+                end do
              endif ! setdata
           end do
        else
-          write(iulog,*) 'allocate_all_vegpfts=false is no longer supported'
-          call endrun()
+          do m = 1,maxpatch_pft
+             if (wtxy(nw,m) > 0._r8) then
+                pi = pi + 1
+                if (setdata) then
+                   pptr%mxy(pi)      = m
+                   pptr%itype(pi)    = vegxy(nw,m)
+                   pptr%gridcell(pi) = gi
+                   pptr%wtgcell(pi) = wtxy(nw,m)
+                   pptr%landunit(pi) = li
+                   pptr%wtlunit(pi) = wtxy(nw,m) / wtlunit2gcell
+                   pptr%column (pi) = ci
+                   pptr%wtcol(pi) = wtxy(nw,m) / wtlunit2gcell
+                endif ! setdata
+             end if
+          end do
        end if
 
     end if
@@ -724,7 +729,7 @@ end subroutine clm_ptrs_check
     use subgridMod, only : subgrid_get_gcellinfo
     use clm_varcon, only : istice, istwet, istdlak, istice_mec
     use clm_varpar, only : npatch_lake, npatch_glacier, npatch_wet
-    use clm_varpar, only : npatch_glacier_mec, maxpatch_glcmec
+    use clm_varpar, only : npatch_glacier_mec
 
 !
 ! !ARGUMENTS:
@@ -756,6 +761,9 @@ end subroutine clm_ptrs_check
     integer  :: ncols                            ! number of columns in landu
     real(r8) :: wtlunit2gcell                    ! landunit weight in gridcell
     real(r8) :: wtcol2lunit                      ! col weight in landunit
+    type(landunit_type), pointer :: lptr         ! pointer to landunit
+    type(column_type)  , pointer :: cptr         ! pointer to column
+    type(pft_type)     , pointer :: pptr         ! pointer to pft
 
 !------------------------------------------------------------------------
 
@@ -789,10 +797,13 @@ end subroutine clm_ptrs_check
 
        ! Set pointers into derived types for this module
 
+       lptr => lun
+       cptr => col
+       pptr => pft
 
        if (npfts /=1 .and. ltype /= istice_mec) then
           write(iulog,*)' set_landunit_wet_ice_lake: compete landunit must'// &
-               ' have one column and one pft '
+                    ' have one column and one pft '
           write(iulog,*)' current values of ncols, pfts=',ncols,npfts
           call endrun()
        end if
@@ -808,13 +819,13 @@ end subroutine clm_ptrs_check
 
              ! Determine landunit properties
 
-             lun%itype    (li) = ltype
-             lun%ifspecial(li) = .true.
-             lun%glcmecpoi(li) = .true.
-             lun%lakpoi   (li) = .false.
-             lun%urbpoi   (li) = .false.
-             lun%gridcell (li) = gi
-             lun%wtgcell  (li) = wtlunit2gcell
+             lptr%itype    (li) = ltype
+             lptr%ifspecial(li) = .true.
+             lptr%glcmecpoi(li) = .true.
+             lptr%lakpoi   (li) = .false.
+             lptr%urbpoi   (li) = .false.
+             lptr%gridcell (li) = gi
+             lptr%wtgcell  (li) = wtlunit2gcell
 
              ! Determine column and properties
              ! (Each column has its own pft)
@@ -834,18 +845,14 @@ end subroutine clm_ptrs_check
                    if (wtlunit2gcell > 0._r8) then
                       wtcol2lunit = wtxy(nw,m)/wtlunit2gcell
                    else   ! virtual landunit
-                      ! TODO WJS: Temporarily setting this to equal weighting for all
-                      ! columns on the landunit. In the future, we could potentially get
-                      ! some info about this from the surface dataset, if it is changed
-                      ! to give pct_glc_mec as % of the column on the landunit
-                      wtcol2lunit = 1._r8 / maxpatch_glcmec
+                      wtcol2lunit = 0._r8
                    endif
 
-                   col%itype    (ci) = ctype
-                   col%gridcell (ci) = gi
-                   col%wtgcell  (ci) = wtcol2lunit * wtlunit2gcell
-                   col%landunit (ci) = li
-                   col%wtlunit  (ci) = wtcol2lunit
+                   cptr%itype    (ci) = ctype
+                   cptr%gridcell (ci) = gi
+                   cptr%wtgcell  (ci) = wtcol2lunit * wtlunit2gcell
+                   cptr%landunit (ci) = li
+                   cptr%wtlunit  (ci) = wtcol2lunit
 
                    ! Set sfc elevation too
 
@@ -853,14 +860,14 @@ end subroutine clm_ptrs_check
 
                    ! Set pft properties
 
-                   pft%mxy      (pi) = m
-                   pft%itype    (pi) = vegxy(nw,m)
-                   pft%gridcell (pi) = gi
-                   pft%wtgcell  (pi) = wtcol2lunit * wtlunit2gcell
-                   pft%landunit (pi) = li
-                   pft%wtlunit  (pi) = wtcol2lunit
-                   pft%column   (pi) = ci
-                   pft%wtcol    (pi) = 1.0_r8
+                   pptr%mxy      (pi) = m
+                   pptr%itype    (pi) = vegxy(nw,m)
+                   pptr%gridcell (pi) = gi
+                   pptr%wtgcell  (pi) = wtcol2lunit * wtlunit2gcell
+                   pptr%landunit (pi) = li
+                   pptr%wtlunit  (pi) = wtcol2lunit
+                   pptr%column   (pi) = ci
+                   pptr%wtcol    (pi) = 1.0_r8
 
                 endif   ! wtxy > 0 or glcmask = 1
              enddo      ! loop over columns
@@ -884,40 +891,40 @@ end subroutine clm_ptrs_check
        
              ! Determine landunit properties 
 
-             lun%itype    (li) = ltype
-             lun%ifspecial(li) = .true.
-             lun%urbpoi   (li) = .false.
+             lptr%itype    (li) = ltype
+             lptr%ifspecial(li) = .true.
+             lptr%urbpoi   (li) = .false.
              if (ltype == istdlak) then
-                lun%lakpoi(li) = .true.
+                lptr%lakpoi(li) = .true.
              else
-                lun%lakpoi(li) = .false.
+                lptr%lakpoi(li) = .false.
              end if
        
-             lun%gridcell (li) = gi
-             lun%wtgcell(li) = wtlunit2gcell
+             lptr%gridcell (li) = gi
+             lptr%wtgcell(li) = wtlunit2gcell
 
              ! Determine column and properties
              ! For the wet, ice or lake landunits it is assumed that each 
              ! column has its own pft
        
-             col%itype(ci)    = ctype
+             cptr%itype(ci)    = ctype
        
-             col%gridcell (ci) = gi
-             col%wtgcell(ci) = wtcol2lunit * wtlunit2gcell
-             col%landunit (ci) = li
-             col%wtlunit(ci) = wtcol2lunit
+             cptr%gridcell (ci) = gi
+             cptr%wtgcell(ci) = wtcol2lunit * wtlunit2gcell
+             cptr%landunit (ci) = li
+             cptr%wtlunit(ci) = wtcol2lunit
 
              ! Set pft properties
 
-             pft%mxy(pi)      = m
-             pft%itype(pi)    = vegxy(nw,m)
+             pptr%mxy(pi)      = m
+             pptr%itype(pi)    = vegxy(nw,m)
      
-             pft%gridcell (pi) = gi
-             pft%wtgcell(pi) = wtcol2lunit * wtlunit2gcell
-             pft%landunit (pi) = li
-             pft%wtlunit(pi) = wtcol2lunit
-             pft%column (pi) = ci
-             pft%wtcol(pi) = 1.0_r8
+             pptr%gridcell (pi) = gi
+             pptr%wtgcell(pi) = wtcol2lunit * wtlunit2gcell
+             pptr%landunit (pi) = li
+             pptr%wtlunit(pi) = wtcol2lunit
+             pptr%column (pi) = ci
+             pptr%wtcol(pi) = 1.0_r8
           endif ! setdata
        end if   ! ltype = istice_mec
     endif       ! npfts > 0       
@@ -938,7 +945,7 @@ end subroutine clm_ptrs_check
 ! Initialize crop landunit without competition
 !
 ! !USES
-    use clmtype
+    use clmtype 
     use subgridMod, only : subgrid_get_gcellinfo
     use clm_varctl, only : create_crop_landunit
     use clm_varpar, only : maxpatch_pft, numcft, npatch_glacier_mec
@@ -966,6 +973,9 @@ end subroutine clm_ptrs_check
     integer  :: npfts                            ! number of pfts in landunit
     integer  :: ncols                            ! number of columns in landu
     real(r8) :: wtlunit2gcell                    ! landunit weight in gridcell
+    type(landunit_type), pointer :: lptr         ! pointer to landunit
+    type(column_type)  , pointer :: cptr         ! pointer to column
+    type(pft_type)     , pointer :: pptr         ! pointer to pft
 !------------------------------------------------------------------------
 
     ! Set decomposition properties
@@ -977,6 +987,9 @@ end subroutine clm_ptrs_check
 
        ! Set pointers into derived types for this module
 
+       lptr => lun
+       cptr => col
+       pptr => pft
        
        ! Set landunit properties - each column has its own pft
        
@@ -985,12 +998,12 @@ end subroutine clm_ptrs_check
        li = li + 1   
 
        if (setdata) then
-          lun%itype(li)     = ltype
-          lun%ifspecial(li) = .false.
-          lun%lakpoi(li)    = .false.
-          lun%urbpoi(li)    = .false.
-          lun%gridcell (li) = gi
-          lun%wtgcell(li) = wtlunit2gcell
+          lptr%itype(li)     = ltype
+          lptr%ifspecial(li) = .false.
+          lptr%lakpoi(li)    = .false.
+          lptr%urbpoi(li)    = .false.
+          lptr%gridcell (li) = gi
+          lptr%wtgcell(li) = wtlunit2gcell
        endif ! setdata
 
        ! Set column and pft properties for this landunit 
@@ -1002,29 +1015,26 @@ end subroutine clm_ptrs_check
              pi = pi + 1
              
              if (setdata) then
-                col%itype(ci)    = 1
-                pft%itype(pi)    = m - 1
-                pft%mxy(pi)      = m
+                cptr%itype(ci)    = 1
+                pptr%itype(pi)    = m - 1
+                pptr%mxy(pi)      = m
           
-                col%gridcell (ci) = gi
-                col%wtgcell(ci) = wtxy(nw,m)
-                col%landunit (ci) = li
+                cptr%gridcell (ci) = gi
+                cptr%wtgcell(ci) = wtxy(nw,m)
+                cptr%landunit (ci) = li
 
-                pft%gridcell (pi) = gi
-                pft%wtgcell(pi) = wtxy(nw,m)
-                pft%landunit (pi) = li
-                pft%column (pi) = ci
-                pft%wtcol(pi) = 1._r8
-                if (wtlunit2gcell > 0) then
-                   col%wtlunit(ci) = wtxy(nw,m) / wtlunit2gcell
-                   pft%wtlunit(pi) = wtxy(nw,m) / wtlunit2gcell
+                pptr%gridcell (pi) = gi
+                pptr%wtgcell(pi) = wtxy(nw,m)
+                pptr%landunit (pi) = li
+                pptr%column (pi) = ci
+                if (wtxy(nw,m) > 0._r8) then
+                   cptr%wtlunit(ci) = wtxy(nw,m) / wtlunit2gcell
+                   pptr%wtlunit(pi) = wtxy(nw,m) / wtlunit2gcell
+                   pptr%wtcol(pi) = 1._r8
                 else
-                   ! TODO WJS: Temporarily setting this to equal weighting for all crop
-                   ! pfts. In the future, we could potentially get some info about this
-                   ! from the surface dataset, if it is changed to give pct_cft as % of
-                   ! the cft on the landunit
-                   col%wtlunit(ci) = 1._r8 / numcft
-                   pft%wtlunit(pi) = 1._r8 / numcft
+                   cptr%wtlunit(ci) = 0._r8
+                   pptr%wtlunit(pi) = 0._r8
+                   pptr%wtcol(pi) = 0._r8
                 end if
              endif ! setdata
           end do
@@ -1036,14 +1046,14 @@ end subroutine clm_ptrs_check
 
 !------------------------------------------------------------------------------
 
-!------------------------------------------------------------------------------
+!------------------------------------------------------------------------
 !BOP
 !
 ! !IROUTINE: set_landunit_urban
 !
 ! !INTERFACE:
 !  subroutine set_landunit_urban (ltype, wtxy, vegxy, &
-  subroutine set_landunit_urban (ltype, udenstype, &
+  subroutine set_landunit_urban (ltype, &
                                  nw, gi, li, ci, pi, setdata)
 !
 ! !DESCRIPTION: 
@@ -1051,10 +1061,9 @@ end subroutine clm_ptrs_check
 !
 ! !USES
     use clm_varcon   , only : isturb, icol_roof, icol_sunwall, icol_shadewall, &
-                              icol_road_perv, icol_road_imperv, &
-                              udens_tbd, udens_hd, udens_md, udens_base
-    use clm_varpar   , only : npatch_urban_tbd, npatch_urban_hd, npatch_urban_md, maxpatch_urb
-    use clmtype
+                              icol_road_perv, icol_road_imperv
+    use clm_varpar   , only : npatch_urban, maxpatch_urb
+    use clmtype 
     use subgridMod   , only : subgrid_get_gcellinfo
     use UrbanInputMod, only : urbinp
     use decompMod    , only : ldecomp
@@ -1062,7 +1071,6 @@ end subroutine clm_ptrs_check
 ! !ARGUMENTS:
     implicit none
     integer , intent(in)    :: ltype             ! landunit type
-    integer , intent(in)    :: udenstype         ! urban density type
 !   real(r8), intent(in)    :: wtxy(:,:)         ! subgrid patch weights
 !   integer , intent(in)    :: vegxy(:,:)        ! PFT types 
     integer , intent(in)    :: nw                ! cell index
@@ -1080,44 +1088,31 @@ end subroutine clm_ptrs_check
 !EOP
     integer  :: c             ! column loop index
     integer  :: m             ! m index in wtxy(nw,m)
-    integer  :: n             ! urban density type index
     integer  :: ctype         ! column type
     integer  :: npfts         ! number of pfts in landunit
     integer  :: ncols         ! number of columns in landunit
-    integer  :: npatch        ! npatch for the given urban density class
     real(r8) :: wtlunit2gcell ! weight relative to gridcell of landunit
     real(r8) :: wtcol2lunit   ! weight of column with respect to landunit
     real(r8) :: wtlunit_roof  ! weight of roof with respect to landunit
     real(r8) :: wtroad_perv   ! weight of pervious road column with respect to total road
     integer  :: ier           ! error status 
+    type(landunit_type), pointer :: lptr  ! pointer to landunit derived subtype
+    type(column_type)  , pointer :: cptr  ! pointer to column derived subtype
+    type(pft_type)     , pointer :: pptr  ! pointer to pft derived subtype
 !------------------------------------------------------------------------
 
-    ! Set decomposition properties, and set variables specific to urban density type
+    ! Set decomposition properties
 
-    select case (udenstype)
-    case (udens_tbd)
-       !   call subgrid_get_gcellinfo(nw, wtxy, nurban_tbd=npfts, wturban_tbd=wtlunit2gcell)
-       call subgrid_get_gcellinfo(nw, nurban_tbd=npfts, wturban_tbd=wtlunit2gcell)
-       npatch = npatch_urban_tbd
-    case (udens_hd)
-       !   call subgrid_get_gcellinfo(nw, wtxy, nurban_hd=npfts, wturban_hd=wtlunit2gcell)
-       call subgrid_get_gcellinfo(nw, nurban_hd=npfts, wturban_hd=wtlunit2gcell)
-       npatch = npatch_urban_hd
-    case (udens_md)
-       !   call subgrid_get_gcellinfo(nw, wtxy, nurban_md=npfts, wturban_md=wtlunit2gcell)
-       call subgrid_get_gcellinfo(nw, nurban_md=npfts, wturban_md=wtlunit2gcell)
-       npatch = npatch_urban_md
-    case default
-       write(iulog,*)' set_landunit_urban: unknown udenstype: ', udenstype
-       call endrun()
-    end select
-
-    n = udenstype - udens_base
+!   call subgrid_get_gcellinfo(nw, wtxy, nurban=npfts, wturban=wtlunit2gcell)
+    call subgrid_get_gcellinfo(nw, nurban=npfts, wturban=wtlunit2gcell)
 
     if (npfts > 0) then
 
        ! Set pointers into derived types for this module
 
+       lptr => lun
+       cptr => col
+       pptr => pft
        
        ! Determine landunit properties - each columns has its own pft
        
@@ -1125,38 +1120,37 @@ end subroutine clm_ptrs_check
 
        li = li + 1
        if (setdata) then
-          lun%itype    (li) = ltype
-          lun%udenstype(li) = udenstype
-          lun%ifspecial(li) = .true.
-          lun%lakpoi   (li) = .false.
-          lun%urbpoi   (li) = .true.
+          lptr%itype    (li) = ltype
+          lptr%ifspecial(li) = .true.
+          lptr%lakpoi   (li) = .false.
+          lptr%urbpoi   (li) = .true.
 
-          lun%gridcell (li) = gi
-          lun%wtgcell  (li) = wtlunit2gcell
+          lptr%gridcell (li) = gi
+          lptr%wtgcell  (li) = wtlunit2gcell
        endif
 
        ! Loop through columns for this landunit and set the column and pft properties
        ! For the urban landunits it is assumed that each column has its own pft
        
-       do m = npatch, npatch + maxpatch_urb - 1
+       do m = npatch_urban, npatch_urban + maxpatch_urb - 1
           if (wtxy(nw,m) > 0._r8) then
                 
-             wtlunit_roof = urbinp%wtlunit_roof(nw,n)
-             wtroad_perv  = urbinp%wtroad_perv(nw,n)
+             wtlunit_roof = urbinp%wtlunit_roof(nw)
+             wtroad_perv  = urbinp%wtroad_perv(nw)
              
-             if (m == npatch  ) then
+             if (m == npatch_urban  ) then
                 ctype = icol_roof
                 wtcol2lunit = wtlunit_roof
-             else if (m == npatch+1) then
+             else if (m == npatch_urban+1) then
                 ctype = icol_sunwall
                 wtcol2lunit = (1. - wtlunit_roof)/3
-             else if (m == npatch+2) then
+             else if (m == npatch_urban+2) then
                 ctype = icol_shadewall
                 wtcol2lunit = (1. - wtlunit_roof)/3
-             else if (m == npatch+3) then
+             else if (m == npatch_urban+3) then
                 ctype = icol_road_imperv
                 wtcol2lunit = ((1. - wtlunit_roof)/3) * (1.-wtroad_perv)
-             else if (m == npatch+4) then
+             else if (m == npatch_urban+4) then
                 ctype = icol_road_perv
                 wtcol2lunit = ((1. - wtlunit_roof)/3) * (wtroad_perv)
              end if
@@ -1165,26 +1159,27 @@ end subroutine clm_ptrs_check
              pi = pi + 1 
              
              if (setdata) then
-                col%itype(ci)     = ctype
+                cptr%itype(ci)     = ctype
 
-                col%gridcell (ci) = gi
-                col%wtgcell  (ci) = wtcol2lunit * wtlunit2gcell
-                col%landunit (ci) = li
-                col%wtlunit  (ci) = wtcol2lunit
+                cptr%gridcell (ci) = gi
+                cptr%wtgcell  (ci) = wtcol2lunit * wtlunit2gcell
+                cptr%landunit (ci) = li
+                cptr%wtlunit  (ci) = wtcol2lunit
 
-                pft%mxy     (pi)  = m
-                pft%itype   (pi)  = vegxy(nw,m)
+                pptr%mxy     (pi)  = m
+                pptr%itype   (pi)  = vegxy(nw,m)
                 
-                pft%gridcell(pi)  = gi
-                pft%wtgcell (pi)  = wtcol2lunit * wtlunit2gcell
-                pft%landunit(pi)  = li
-                pft%wtlunit (pi)  = wtcol2lunit
-                pft%column  (pi)  = ci
-                pft%wtcol   (pi)  = 1.0_r8
+                pptr%gridcell(pi)  = gi
+                pptr%wtgcell (pi)  = wtcol2lunit * wtlunit2gcell
+                pptr%landunit(pi)  = li
+                pptr%wtlunit (pi)  = wtcol2lunit
+                pptr%column  (pi)  = ci
+                pptr%wtcol   (pi)  = 1.0_r8
              end if
              
           end if
        end do   ! end of loop through urban columns-pfts
+
     end if
 
   end subroutine set_landunit_urban

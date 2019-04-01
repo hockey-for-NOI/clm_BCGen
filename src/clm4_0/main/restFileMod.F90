@@ -62,7 +62,7 @@ contains
     use clm_time_manager , only : timemgr_restart_io, get_nstep
     use subgridRestMod   , only : SubgridRest
     use BiogeophysRestMod, only : BiogeophysRest
-    use CNRestMod        , only : CNRest
+    use CNrestMod        , only : CNRest
     use CropRestMod      , only : CropRest
     use accumulMod       , only : accumulRest
     use histFileMod      , only : hist_restart_ncd
@@ -177,7 +177,7 @@ contains
 !
 ! !USES:
     use BiogeophysRestMod, only : BiogeophysRest
-    use CNRestMod        , only : CNRest
+    use CNrestMod        , only : CNRest
     use CropRestMod      , only : CropRest
     use accumulMod       , only : accumulRest
     use histFileMod      , only : hist_restart_ncd

@@ -13,7 +13,8 @@ module mkarbinitMod
 
 ! !USES:
     use shr_kind_mod , only : r8 => shr_kind_r8
-    use clm_varctl   , only : iulog
+    use clm_varctl   , only : iulog, use_cn, use_cndv, &
+                              use_vancouver, use_mexicocity
     use shr_sys_mod  , only : shr_sys_flush
     use spmdMod      , only : masterproc
 
@@ -42,7 +43,7 @@ contains
 ! !DESCRIPTION:
 ! Initializes the following time varying variables:
 ! water      : h2osno, h2ocan, h2osoi_liq, h2osoi_ice, h2osoi_vol
-! snow       : snow_depth, snl, dz, z, zi
+! snow       : snowdp, snl, dz, z, zi
 ! temperature: t_soisno, t_veg, t_grnd
 !
 ! !USES:
@@ -77,30 +78,25 @@ contains
 !
 ! local pointers to implicit in arguments
 !
-    integer , pointer :: pcolumn(:)         ! column index associated with each pft
-    integer , pointer :: ctype(:)           ! column type
-    integer , pointer :: clandunit(:)       ! landunit index associated with each column
-    integer , pointer :: ltype(:)           ! landunit type
-    logical , pointer :: lakpoi(:)          ! true => landunit is a lake point
-    integer , pointer :: plandunit(:)       ! landunit index associated with each pft
-    logical , pointer :: urbpoi(:)          ! true => landunit is an urban point
-    logical , pointer :: ifspecial(:)       ! true => landunit is not vegetated
-    real(r8), pointer :: dz(:,:)            ! layer thickness depth (m)
-    real(r8), pointer :: watsat(:,:)        ! volumetric soil water at saturation (porosity)
-    real(r8), pointer :: h2osoi_ice(:,:)    ! ice lens (kg/m2)
-    real(r8), pointer :: h2osoi_liq(:,:)    ! liquid water (kg/m2)
-    real(r8), pointer :: bsw(:,:)           ! Clapp and Hornberger "b"
-    real(r8), pointer :: sucsat(:,:)        ! minimum soil suction (mm)
-    real(r8), pointer :: zi(:,:)            ! interface level below a "z" level (m)
-    real(r8), pointer :: wa(:)              ! water in the unconfined aquifer (mm)
-    real(r8), pointer :: zwt(:)             ! water table depth (m)
-    real(r8), pointer :: h2osfc(:)          ! surface water (mm)
-    real(r8), pointer :: t_h2osfc(:)        ! surface water temperature
-    real(r8), pointer :: frac_h2osfc(:)     ! fraction of ground covered by surface water (0 to 1)
-    real(r8), pointer :: qflx_h2osfc_surf(:)!surface water runoff (mm/s)
-    real(r8), pointer :: frost_table(:)     ! frost table depth (m)
-    real(r8), pointer :: zwt_perched(:)     ! perched water table depth (m)
-    real(r8), pointer :: int_snow(:)        ! integrated snowfall
+    integer , pointer :: pcolumn(:)        ! column index associated with each pft
+    integer , pointer :: ctype(:)          ! column type
+    integer , pointer :: clandunit(:)      ! landunit index associated with each column
+    integer , pointer :: ltype(:)          ! landunit type
+    logical , pointer :: lakpoi(:)         ! true => landunit is a lake point
+    integer , pointer :: plandunit(:)      ! landunit index associated with each pft
+    logical , pointer :: urbpoi(:)         ! true => landunit is an urban point
+    logical , pointer :: ifspecial(:)      ! true => landunit is not vegetated
+    real(r8), pointer :: dz(:,:)           ! layer thickness depth (m)
+    real(r8), pointer :: watsat(:,:)       ! volumetric soil water at saturation (porosity) (nlevgrnd)
+    real(r8), pointer :: h2osoi_ice(:,:)   ! ice lens (kg/m2)
+    real(r8), pointer :: h2osoi_liq(:,:)   ! liquid water (kg/m2)
+    real(r8), pointer :: bsw2(:,:)         ! Clapp and Hornberger "b" for CN code
+    real(r8), pointer :: psisat(:,:)       ! soil water potential at saturation for CN code (MPa)
+    real(r8), pointer :: vwcsat(:,:)       ! volumetric water content at saturation for CN code (m3/m3)
+    real(r8), pointer :: zi(:,:)           ! interface level below a "z" level (m)
+    real(r8), pointer :: wa(:)             ! water in the unconfined aquifer (mm)
+    real(r8), pointer :: wt(:)             ! total water storage (unsaturated soil water + groundwater) (mm)
+    real(r8), pointer :: zwt(:)            ! water table depth (m)
     real(r8), pointer :: qflx_snow_melt(:)  ! snow melt (net)
 !
 ! local pointers to implicit out arguments
@@ -117,7 +113,7 @@ contains
     real(r8), pointer :: h2ocan_col(:)      ! canopy water (mm H2O) (column-level)
     real(r8), pointer :: h2ocan_pft(:)      ! canopy water (mm H2O) (pft-level)
     real(r8), pointer :: h2osno(:)          ! snow water (mm H2O)
-    real(r8), pointer :: snow_depth(:)          ! snow height (m)
+    real(r8), pointer :: snowdp(:)          ! snow height (m)
     real(r8), pointer :: qflx_irrig(:)      ! irrigation flux (mm H2O/s)
     real(r8), pointer :: eflx_lwrad_out(:)  ! emitted infrared (longwave) radiation (W/m**2)
     real(r8), pointer :: soilpsi(:,:)       ! soil water potential in each soil layer (MPa)
@@ -149,9 +145,7 @@ contains
     real(r8), pointer :: mss_cnc_dst2(:,:)  ! mass concentration of dust species 2 (col,lyr) [kg/kg]
     real(r8), pointer :: mss_cnc_dst3(:,:)  ! mass concentration of dust species 3 (col,lyr) [kg/kg]
     real(r8), pointer :: mss_cnc_dst4(:,:)  ! mass concentration of dust species 4 (col,lyr) [kg/kg]
-    real(r8), pointer :: irrig_rate(:)      ! current irrigation rate [mm/s]
-    real(r8), pointer :: tsoi17(:)          ! soil T for top 0.17 m
-    real(r8), pointer :: fsat(:)               !fractional area with water table at surface
+    real(r8), pointer :: irrig_rate(:)         ! current irrigation rate [mm/s]
     integer,  pointer :: n_irrig_steps_left(:) ! number of time steps for which we still need to irrigate today (if 0, ignore irrig_rate)
 
 !
@@ -173,44 +167,37 @@ contains
 
     ! Assign local pointers to derived subtypes components (landunit-level)
 
-    h2osfc           => cws%h2osfc
-    t_h2osfc         => ces%t_h2osfc
-    frac_h2osfc      => cps%frac_h2osfc
-    qflx_h2osfc_surf => cwf%qflx_h2osfc_surf
-    qflx_snow_melt   => cwf%qflx_snow_melt
-    frost_table      => cws%frost_table
-    zwt_perched      => cws%zwt_perched
-    int_snow         => cws%int_snow
-    ltype            => lun%itype
-    lakpoi           =>lun%lakpoi
-    ifspecial        =>lun%ifspecial
-    urbpoi           =>lun%urbpoi
+    ltype      => lun%itype
+    lakpoi     => lun%lakpoi
+    ifspecial  => lun%ifspecial
+    urbpoi     => lun%urbpoi
 
     ! Assign local pointers to derived subtypes components (column-level)
 
     ctype            => col%itype
-    clandunit        =>col%landunit
+    clandunit        => col%landunit
     snl              => cps%snl
     dz               => cps%dz
-    watsat            => cps%watsat
-    sucsat            => cps%sucsat
-    bsw               => cps%bsw
+    watsat           => cps%watsat
+    bsw2             => cps%bsw2
+    vwcsat           => cps%vwcsat
+    psisat           => cps%psisat
     soilpsi          => cps%soilpsi
     h2osoi_ice       => cws%h2osoi_ice
     h2osoi_liq       => cws%h2osoi_liq
     h2osoi_vol       => cws%h2osoi_vol
     h2ocan_col       => pws_a%h2ocan
     qflx_irrig       => cwf%qflx_irrig
-    snow_depth           => cps%snow_depth
+    qflx_snow_melt   => cwf%qflx_snow_melt
+    snowdp           => cps%snowdp
     h2osno           => cws%h2osno
     t_soisno         => ces%t_soisno
     t_lake           => ces%t_lake
     t_grnd           => ces%t_grnd
-    tsoi17           => ces%tsoi17
     zi               => cps%zi
     wa               => cws%wa
+    wt               => cws%wt
     zwt              => cws%zwt
-    fsat             => cws%fsat
     snw_rds          => cps%snw_rds
     snw_rds_top      => cps%snw_rds_top
     sno_liq_top      => cps%sno_liq_top
@@ -244,41 +231,41 @@ contains
 
     ! Assign local pointers to derived subtypes components (pft-level)
 
-    pcolumn        =>pft%column
+    pcolumn        => pft%column
     h2ocan_pft     => pws%h2ocan
     t_veg          => pes%t_veg
     t_ref2m        => pes%t_ref2m
     t_ref2m_u      => pes%t_ref2m_u
     t_ref2m_r      => pes%t_ref2m_r
-    plandunit      =>pft%landunit
+    plandunit      => pft%landunit
     eflx_lwrad_out => pef%eflx_lwrad_out  
 
     ! Determine subgrid bounds on this processor
 
     call get_proc_bounds(begg, endg, begl, endl, begc, endc, begp, endp)
 
-    ! NOTE: h2ocan, h2osno, and snow_depth has valid values everywhere
+    ! NOTE: h2ocan, h2osno, and snowdp has valid values everywhere
     ! canopy water (pft level)
 
     do p = begp, endp
        h2ocan_pft(p) = 0._r8
+       
+       ! added for canopy water mass balance under dynamic pft weights
+       !pps%tlai(p) = 0._r8
+       !pps%tsai(p) = 0._r8
+       !pps%elai(p) = 0._r8
+       !pps%esai(p) = 0._r8
+       !pps%htop(p) = 0._r8
+       !pps%hbot(p) = 0._r8
+       !pps%frac_veg_nosno_alb(p) = 0._r8
     end do
-
-    ! initialize h2osfc, frac_h2osfc, t_h2osfc, qflx_snow_melt
-    do c = begc,endc
-       h2osfc(c)           = 0._r8
-       frac_h2osfc(c)      = 0._r8
-       !       t_h2osfc(c) = spval
-       t_h2osfc(c)         = 274._r8
-       qflx_h2osfc_surf(c) = 0._r8
-       qflx_snow_melt(c)   = 0._r8
-    enddo
 
     do c = begc,endc
 
        ! canopy water (column level)
 
        h2ocan_col(c) = 0._r8
+       qflx_snow_melt(c) = 0._r8
 
        ! snow water
 
@@ -296,11 +283,9 @@ contains
           h2osno(c) = 0._r8
        endif
 
-       ! initialize int_snow, int_melt
-       int_snow(c) = h2osno(c)
        ! snow depth
 
-       snow_depth(c)  = h2osno(c) / bdsno
+       snowdp(c)  = h2osno(c) / bdsno
 
        ! Initialize Irrigation to zero
        if (ltype(l)==istsoil) then
@@ -312,7 +297,7 @@ contains
 
     ! Set snow layer number, depth and thickiness
 
-    call snow_depth2lev(begc, endc)
+    call snowdp2lev(begc, endc)
 
     ! Set snow/soil temperature, note:
     ! t_soisno only has valid values over non-lake
@@ -337,23 +322,59 @@ contains
           if (ltype(l)==istice .or. ltype(l)==istice_mec) then
              do j = 1, nlevgrnd
                 t_soisno(c,j) = 250._r8
+
              end do
           else if (ltype(l) == istwet) then
              do j = 1, nlevgrnd
                 t_soisno(c,j) = 277._r8
              end do
           else if (ltype(l) == isturb) then
-             if (ctype(c) == icol_road_perv .or. ctype(c) == icol_road_imperv) then 
-               do j = 1, nlevgrnd
-                 t_soisno(c,j) = 274._r8
-               end do
-             ! Set sunwall, shadewall, roof to fairly high temperature to avoid initialization
-             ! shock from large heating/air conditioning flux
-             else if (ctype(c) == icol_sunwall .or. ctype(c) == icol_shadewall &
-                      .or. ctype(c) == icol_roof) then
-               do j = 1, nlevurb
-                 t_soisno(c,j) = 292._r8
-               end do
+             if (use_vancouver) then
+                if (ctype(c) == icol_road_perv .or. ctype(c) == icol_road_imperv) then 
+                   ! Set road top layer to initial air temperature and interpolate other
+                   ! layers down to 20C in bottom layer
+                   do j = 1, nlevurb
+                      t_soisno(c,j) = 297.56 - (j-1) * ((297.56-293.16)/(nlevurb-1)) 
+                   end do
+                   ! Set wall and roof layers to initial air temperature
+                else if (ctype(c) == icol_sunwall .or. ctype(c) == icol_shadewall .or. ctype(c) == icol_roof) then
+                   do j = 1, nlevurb
+                      t_soisno(c,j) = 297.56
+                   end do
+                else
+                   do j = 1, nlevurb
+                      t_soisno(c,j) = 283._r8
+                   end do
+                end if
+             else if (use_mexicocity) then
+                if (ctype(c) == icol_road_perv .or. ctype(c) == icol_road_imperv) then 
+                   ! Set road top layer to initial air temperature and interpolate other
+                   ! layers down to 22C in bottom layer
+                   do j = 1, nlevurb
+                      t_soisno(c,j) = 289.46 - (j-1) * ((289.46-295.16)/(nlevurb-1)) 
+                   end do
+                else if (ctype(c) == icol_sunwall .or. ctype(c) == icol_shadewall .or. ctype(c) == icol_roof) then
+                   ! Set wall and roof layers to initial air temperature
+                   do j = 1, nlevurb
+                      t_soisno(c,j) = 289.46
+                   end do
+                else
+                   do j = 1, nlevurb
+                      t_soisno(c,j) = 283._r8
+                   end do
+                end if
+             else
+                if (ctype(c) == icol_road_perv .or. ctype(c) == icol_road_imperv) then 
+                   do j = 1, nlevurb
+                      t_soisno(c,j) = 274._r8
+                   end do
+                else if (ctype(c) == icol_sunwall .or. ctype(c) == icol_shadewall .or. ctype(c) == icol_roof) then
+                   ! Set sunwall, shadewall, roof to fairly high temperature to avoid initialization
+                   ! shock from large heating/air conditioning flux
+                   do j = 1, nlevurb
+                      t_soisno(c,j) = 292._r8
+                   end do
+                end if
              end if
           else
              do j = 1, nlevgrnd
@@ -365,7 +386,6 @@ contains
           t_lake(c,1:nlevlak) = 277._r8
           t_grnd(c) = t_lake(c,1)
        endif
-       tsoi17(c) = t_grnd(c)
 
     end do
 
@@ -378,18 +398,46 @@ contains
           qflx_irrig(c)      = 0.0_r8
        end if
 
-       t_veg(p) = 283._r8
-       t_ref2m(p) = 283._r8
-       if (urbpoi(l)) then
-         t_ref2m_u(p) = 283._r8
+       if (use_vancouver) then
+          t_veg(p) = 297.56
+          t_ref2m(p) = 297.56
+          if (urbpoi(l)) then
+             t_ref2m_u(p) = 297.56
+          else
+             t_ref2m_u(p) = spval
+          end if
+          if (ifspecial(l)) then
+             t_ref2m_r(p) = spval
+          else
+             t_ref2m_r(p) = 297.56
+          end if
+       else if (use_mexicocity) then
+          t_veg(p) = 289.46
+          t_ref2m(p) = 289.46
+          if (urbpoi(l)) then
+             t_ref2m_u(p) = 289.46
+          else
+             t_ref2m_u(p) = spval
+          end if
+          if (ifspecial(l)) then
+             t_ref2m_r(p) = spval
+          else
+             t_ref2m_r(p) = 289.46
+          end if
        else
-         t_ref2m_u(p) = spval
+          t_veg(p) = 283._r8
+          t_ref2m(p) = 283._r8
+          if (urbpoi(l)) then
+             t_ref2m_u(p) = 283._r8
+          else
+             t_ref2m_u(p) = spval
+          end if
+          if (ifspecial(l)) then
+             t_ref2m_r(p) = spval
+          else
+             t_ref2m_r(p) = 283._r8
+          end if
        end if
-       if (ifspecial(l)) then
-         t_ref2m_r(p) = spval
-       else
-         t_ref2m_r(p) = 283._r8
-       end if 
        eflx_lwrad_out(p) = sb * (t_grnd(c))**4
     end do
 
@@ -404,6 +452,7 @@ contains
     h2osoi_ice(begc:endc,-nlevsno+1:) = spval
 
     wa(begc:endc)  = 5000._r8
+    wt(begc:endc)  = 5000._r8
     zwt(begc:endc) = 0._r8
 
     do c = begc,endc
@@ -412,20 +461,17 @@ contains
           if (ltype(l) == isturb) then
              if (ctype(c) == icol_road_perv) then
                 wa(c)  = 4800._r8
+                wt(c)  = wa(c)
                 zwt(c) = (25._r8 + zi(c,nlevsoi)) - wa(c)/0.2_r8 /1000._r8  ! One meter below soil column
              else
                 wa(c)  = spval
+                wt(c)  = spval
                 zwt(c) = spval
              end if
-             ! initialize frost_table, zwt_perched
-             zwt_perched(c) = spval
-             frost_table(c) = spval
           else
-             wa(c)  = 4000._r8
+             wa(c)  = 4800._r8
+             wt(c)  = wa(c)
              zwt(c) = (25._r8 + zi(c,nlevsoi)) - wa(c)/0.2_r8 /1000._r8  ! One meter below soil column
-             ! initialize frost_table, zwt_perched to bottom of soil column
-             zwt_perched(c) = zi(c,nlevsoi)
-             frost_table(c) = zi(c,nlevsoi)
           end if
        end if
     end do
@@ -441,30 +487,18 @@ contains
                 if (j > nlevsoi) then
                    h2osoi_vol(c,j) = 0.0_r8
                 else
-                   h2osoi_vol(c,j) = 0.15_r8
+                   h2osoi_vol(c,j) = 0.3_r8
                 endif
              end do
           else if (ltype(l) == isturb) then 
-             if (ctype(c) == icol_road_perv) then
-               nlevs = nlevgrnd
-               do j = 1, nlevs
-                  if (j <= nlevsoi) then
-                     h2osoi_vol(c,j) = 0.3_r8
-                  else
-                     h2osoi_vol(c,j) = 0.0_r8
-                  end if
-               end do
-             else if (ctype(c) == icol_road_imperv) then
-               nlevs = nlevgrnd
-               do j = 1, nlevs
-                  h2osoi_vol(c,j) = 0.0_r8
-               end do
-             else
-               nlevs = nlevurb
-               do j = 1, nlevs
-                  h2osoi_vol(c,j) = 0.0_r8
-               end do
-             end if
+             nlevs = nlevurb
+             do j = 1, nlevs
+                if (ctype(c) == icol_road_perv .and. j <= nlevsoi) then
+                   h2osoi_vol(c,j) = 0.3_r8
+                else
+                   h2osoi_vol(c,j) = 0.0_r8
+                end if
+             end do
           else if (ltype(l) == istwet) then
              nlevs = nlevgrnd
              do j = 1, nlevs
@@ -493,8 +527,22 @@ contains
              endif
           end do
 
+          if (use_cn) then
+             ! soil water potential (added 10/21/03, PET)
+             ! required for CN code
+             if (ltype(l) == istsoil .or. ltype(l) == istcrop) then
+                nlevs = nlevgrnd
+                do j = 1, nlevs
+                   if (h2osoi_liq(c,j) > 0._r8) then
+                      vwc = h2osoi_liq(c,j)/(dz(c,j)*denh2o)
+                      psi = psisat(c,j) * (vwc/vwcsat(c,j))**bsw2(c,j)
+                      soilpsi(c,j) = max(psi, -15.0_r8)
+                      soilpsi(c,j) = min(soilpsi(c,j),0.0_r8)
+                   end if
+                end do
+             end if
+          end if
        end if
-
     end do
 
     ! Set snow
@@ -559,10 +607,10 @@ contains
 !-----------------------------------------------------------------------
 !BOP
 !
-! !ROUTINE: snow_depth2lev
+! !ROUTINE: snowdp2lev
 !
 ! !INTERFACE:
-  subroutine snow_depth2lev(lbc, ubc)
+  subroutine snowdp2lev(lbc, ubc)
 !
 ! !DESCRIPTION:
 ! Create snow layers and interfaces given snow depth.
@@ -585,7 +633,7 @@ contains
 ! local pointers to implicit in arguments
 !
   integer , pointer :: clandunit(:)  ! landunit index associated with each column
-  real(r8), pointer :: snow_depth(:)     ! snow height (m)
+  real(r8), pointer :: snowdp(:)     ! snow height (m)
   logical , pointer :: lakpoi(:)     ! true => landunit is a lake point
 !
 ! local pointers to implicit out arguments
@@ -603,12 +651,12 @@ contains
  
   ! Assign local pointers to derived subtypes components (landunit-level)
 
-  lakpoi =>lun%lakpoi
+  lakpoi => lun%lakpoi
 
   ! Assign local pointers to derived type members (column-level)
 
-  clandunit =>col%landunit
-  snow_depth    => cps%snow_depth
+  clandunit => col%landunit
+  snowdp    => cps%snowdp
   snl       => cps%snl
   zi        => cps%zi
   dz        => cps%dz
@@ -627,59 +675,59 @@ contains
   do c = lbc,ubc
      l = clandunit(c)
      if (.not. lakpoi(l)) then
-        if (snow_depth(c) < 0.01_r8) then
+        if (snowdp(c) < 0.01_r8) then
            snl(c) = 0
            dz(c,-nlevsno+1:0) = 0._r8
            z (c,-nlevsno+1:0) = 0._r8
            zi(c,-nlevsno+0:0) = 0._r8
         else
-           if ((snow_depth(c) >= 0.01_r8) .and. (snow_depth(c) <= 0.03_r8)) then
+           if ((snowdp(c) >= 0.01_r8) .and. (snowdp(c) <= 0.03_r8)) then
               snl(c) = -1
-              dz(c,0)  = snow_depth(c)
-           else if ((snow_depth(c) > 0.03_r8) .and. (snow_depth(c) <= 0.04_r8)) then
+              dz(c,0)  = snowdp(c)
+           else if ((snowdp(c) > 0.03_r8) .and. (snowdp(c) <= 0.04_r8)) then
               snl(c) = -2
-              dz(c,-1) = snow_depth(c)/2._r8
+              dz(c,-1) = snowdp(c)/2._r8
               dz(c, 0) = dz(c,-1)
-           else if ((snow_depth(c) > 0.04_r8) .and. (snow_depth(c) <= 0.07_r8)) then
+           else if ((snowdp(c) > 0.04_r8) .and. (snowdp(c) <= 0.07_r8)) then
               snl(c) = -2
               dz(c,-1) = 0.02_r8
-              dz(c, 0) = snow_depth(c) - dz(c,-1)
-           else if ((snow_depth(c) > 0.07_r8) .and. (snow_depth(c) <= 0.12_r8)) then
+              dz(c, 0) = snowdp(c) - dz(c,-1)
+           else if ((snowdp(c) > 0.07_r8) .and. (snowdp(c) <= 0.12_r8)) then
               snl(c) = -3
               dz(c,-2) = 0.02_r8
-              dz(c,-1) = (snow_depth(c) - 0.02_r8)/2._r8
+              dz(c,-1) = (snowdp(c) - 0.02_r8)/2._r8
               dz(c, 0) = dz(c,-1)
-           else if ((snow_depth(c) > 0.12_r8) .and. (snow_depth(c) <= 0.18_r8)) then
+           else if ((snowdp(c) > 0.12_r8) .and. (snowdp(c) <= 0.18_r8)) then
               snl(c) = -3
               dz(c,-2) = 0.02_r8
               dz(c,-1) = 0.05_r8
-              dz(c, 0) = snow_depth(c) - dz(c,-2) - dz(c,-1)
-           else if ((snow_depth(c) > 0.18_r8) .and. (snow_depth(c) <= 0.29_r8)) then
+              dz(c, 0) = snowdp(c) - dz(c,-2) - dz(c,-1)
+           else if ((snowdp(c) > 0.18_r8) .and. (snowdp(c) <= 0.29_r8)) then
               snl(c) = -4
               dz(c,-3) = 0.02_r8
               dz(c,-2) = 0.05_r8
-              dz(c,-1) = (snow_depth(c) - dz(c,-3) - dz(c,-2))/2._r8
+              dz(c,-1) = (snowdp(c) - dz(c,-3) - dz(c,-2))/2._r8
               dz(c, 0) = dz(c,-1)
-           else if ((snow_depth(c) > 0.29_r8) .and. (snow_depth(c) <= 0.41_r8)) then
+           else if ((snowdp(c) > 0.29_r8) .and. (snowdp(c) <= 0.41_r8)) then
               snl(c) = -4
               dz(c,-3) = 0.02_r8
               dz(c,-2) = 0.05_r8
               dz(c,-1) = 0.11_r8
-              dz(c, 0) = snow_depth(c) - dz(c,-3) - dz(c,-2) - dz(c,-1)
-           else if ((snow_depth(c) > 0.41_r8) .and. (snow_depth(c) <= 0.64_r8)) then
+              dz(c, 0) = snowdp(c) - dz(c,-3) - dz(c,-2) - dz(c,-1)
+           else if ((snowdp(c) > 0.41_r8) .and. (snowdp(c) <= 0.64_r8)) then
               snl(c) = -5
               dz(c,-4) = 0.02_r8
               dz(c,-3) = 0.05_r8
               dz(c,-2) = 0.11_r8
-              dz(c,-1) = (snow_depth(c) - dz(c,-4) - dz(c,-3) - dz(c,-2))/2._r8
+              dz(c,-1) = (snowdp(c) - dz(c,-4) - dz(c,-3) - dz(c,-2))/2._r8
               dz(c, 0) = dz(c,-1)
-           else if (snow_depth(c) > 0.64_r8) then
+           else if (snowdp(c) > 0.64_r8) then
               snl(c) = -5
               dz(c,-4) = 0.02_r8
               dz(c,-3) = 0.05_r8
               dz(c,-2) = 0.11_r8
               dz(c,-1) = 0.23_r8
-              dz(c, 0)=snow_depth(c)-dz(c,-4)-dz(c,-3)-dz(c,-2)-dz(c,-1)
+              dz(c, 0)=snowdp(c)-dz(c,-4)-dz(c,-3)-dz(c,-2)-dz(c,-1)
            endif
         end if
      end if
@@ -709,8 +757,7 @@ contains
      end if
   end do
 
-  end subroutine snow_depth2lev
-
+  end subroutine snowdp2lev
 
 !-----------------------------------------------------------------------
 

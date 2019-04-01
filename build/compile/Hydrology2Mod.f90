@@ -11,10 +11,8 @@ module Hydrology2Mod
 ! Calculation of soil/snow hydrology.
 !
 ! !USES:
-   use shr_kind_mod, only : r8 => shr_kind_r8
-   use clm_varctl,   only : iulog
-   use abortutils,   only : endrun
-
+   use clm_varctl, only : iulog, use_cn
+   use abortutils, only : endrun
 ! !PUBLIC TYPES:
   implicit none
   save
@@ -28,7 +26,7 @@ module Hydrology2Mod
 ! 11/05/03 Peter Thornton: Added calculation of soil water potential
 !   for use in CN phenology code.
 ! 04/25/07 Keith Oleson: CLM3.5 Hydrology
-!F. Li and S. Levis (11/06/12) for wf2 and tsoi17
+!
 !EOP
 !-----------------------------------------------------------------------
 
@@ -63,22 +61,20 @@ contains
 !    -> DivideSnowLayers:      subdivide snow layers that are thicker than maximum
 !
 ! !USES:
+    use shr_kind_mod, only: r8 => shr_kind_r8
     use clmtype
     use clm_atmlnd      , only : clm_a2l
-    use clm_varcon      , only : denh2o, denice, istice, istwet, istsoil, isturb, istice_mec, spval, &
+    use clm_varcon      , only : denh2o, denice, spval, &
+                                 istice, istwet, istsoil, isturb, istice_mec, &
                                  icol_roof, icol_road_imperv, icol_road_perv, icol_sunwall, &
-                                 icol_shadewall, istdlak, &
-                                 tfrz, hfus, grav
+                                 icol_shadewall
     use clm_varcon      , only : istcrop
     use clm_varctl      , only : glc_dyntopo
-    use clm_varpar      , only : nlevgrnd, nlevsno, nlevsoi, nlevurb
+    use clm_varpar      , only : nlevgrnd, nlevsno, nlevsoi
     use SnowHydrologyMod, only : SnowCompaction, CombineSnowLayers, DivideSnowLayers, &
                                  SnowWater, BuildSnowFilter
     use SoilHydrologyMod, only : Infiltration, SoilWater, Drainage, SurfaceRunoff
     use clm_time_manager, only : get_step_size, get_nstep, is_perpetual
-
-
-
 
 !
 ! !ARGUMENTS:
@@ -106,17 +102,9 @@ contains
 !
 ! local pointers to implicit in arguments
 !
-    real(r8), pointer :: snow_depth(:)      !snow height of snow covered area (m)
-    real(r8), pointer :: snowdp(:)             ! gridcell averaged snow height (m)
-    real(r8), pointer :: frac_sno_eff(:)  !eff.  snow cover fraction (col) [frc]
-    real(r8), pointer :: qflx_evap_soi(:) ! soil evaporation
-    real(r8), pointer :: h2osfc(:)        ! surface water (mm)
-    real(r8), pointer :: frac_h2osfc(:)   ! fraction of ground covered by surface water (0 to 1)
-    real(r8), pointer :: t_h2osfc(:) 	  ! surface water temperature
-    real(r8), pointer :: qflx_drain_perched(:)    ! sub-surface runoff from perched zwt (mm H2O /s)
+!rtm_flood
     real(r8), pointer :: qflx_floodg(:)   ! gridcell flux of flood water from RTM
-    real(r8), pointer :: qflx_h2osfc_surf(:)!surface water runoff (mm/s)
-    logical , pointer :: cactive(:)       ! true=>do computations on this column (see reweightMod for details)
+!rtm_flood
     integer , pointer :: cgridcell(:)     ! column's gridcell
     integer , pointer :: clandunit(:)     ! column's landunit
     integer , pointer :: ityplun(:)       ! landunit type
@@ -132,7 +120,9 @@ contains
     real(r8), pointer :: forc_snow(:)     ! snow rate [mm/s]
     real(r8), pointer :: begwb(:)         ! water mass begining of the time step
     real(r8), pointer :: qflx_evap_tot(:) ! qflx_evap_soi + qflx_evap_can + qflx_tran_veg
-    real(r8), pointer :: smpmin(:)        ! restriction for min of soil potential (mm)
+    real(r8), pointer :: bsw2(:,:)        ! Clapp and Hornberger "b" for CN code
+    real(r8), pointer :: psisat(:,:)      ! soil water potential at saturation for CN code (MPa)
+    real(r8), pointer :: vwcsat(:,:)      ! volumetric water content at saturation for CN code (m3/m3)
 !
 ! local pointers to implicit inout arguments
 !
@@ -150,8 +140,7 @@ contains
 ! local pointers to implicit out arguments
 !
     real(r8), pointer :: endwb(:)         ! water mass end of the time step
-    real(r8), pointer :: wf(:)            ! soil water as frac. of whc for top 0.05 m  !F. Li and S. Levis
-    real(r8), pointer :: wf2(:)           ! soil water as frac. of whc for top 0.17 m added by F. Li and S. Levis 
+    real(r8), pointer :: wf(:)            ! soil water as frac. of whc for top 0.5 m
     real(r8), pointer :: snowice(:)       ! average snow ice lens
     real(r8), pointer :: snowliq(:)       ! average snow liquid water
     real(r8), pointer :: t_grnd(:)        ! ground temperature (Kelvin)
@@ -159,8 +148,7 @@ contains
     real(r8), pointer :: h2osoi_ice(:,:)  ! ice lens (kg/m2)
     real(r8), pointer :: h2osoi_liq(:,:)  ! liquid water (kg/m2)
     real(r8), pointer :: t_soi_10cm(:)         ! soil temperature in top 10cm of soil (Kelvin)
-    real(r8), pointer :: tsoi17(:)         ! soil temperature in top 17cm of soil (Kelvin) added by F. Li and S. Levis
-   real(r8), pointer :: h2osoi_liqice_10cm(:) ! liquid water + ice lens in top 10cm of soil (kg/m2)
+    real(r8), pointer :: h2osoi_liqice_10cm(:) ! liquid water + ice lens in top 10cm of soil (kg/m2)
     real(r8), pointer :: h2osoi_vol(:,:)  ! volumetric soil water (0<=h2osoi_vol<=watsat) [m3/m3]
     real(r8), pointer :: qflx_drain(:)    ! sub-surface runoff (mm H2O /s)
     real(r8), pointer :: qflx_surf(:)     ! surface runoff (mm H2O /s)
@@ -221,15 +209,20 @@ contains
     integer  :: nstep                      ! time step number
     real(r8) :: dtime                      ! land model time step (sec)
     real(r8) :: vol_liq(lbc:ubc,1:nlevgrnd)! partial volume of liquid water in layer
+    real(r8) :: icefrac(lbc:ubc,1:nlevgrnd)! ice fraction in layer
     real(r8) :: dwat(lbc:ubc,1:nlevgrnd)   ! change in soil water
     real(r8) :: hk(lbc:ubc,1:nlevgrnd)     ! hydraulic conductivity (mm h2o/s)
     real(r8) :: dhkdw(lbc:ubc,1:nlevgrnd)  ! d(hk)/d(vol_liq)
-    real(r8) :: psi,vwc,fsattmp,psifrz     ! temporary variables for soilpsi calculation
+    real(r8) :: psi,vwc,fsattmp            ! temporary variables for soilpsi calculation
+    real(r8) :: watdry                     ! temporary
+    real(r8) :: rwat(lbc:ubc)              ! soil water wgted by depth to maximum depth of 0.5 m
+    real(r8) :: swat(lbc:ubc)              ! same as rwat but at saturation
+    real(r8) :: rz(lbc:ubc)                ! thickness of soil layers contributing to rwat (m)
+    real(r8) :: tsw                        ! volumetric soil water to 0.5 m
+    real(r8) :: stsw                       ! volumetric soil water to 0.5 m at saturation
     real(r8) :: snowmass                   ! liquid+ice snow mass in a layer [kg/m2]
     real(r8) :: snowcap_scl_fct            ! temporary factor used to correct for snow capping
     real(r8) :: fracl                      ! fraction of soil layer contributing to 10cm total soil water
-    real(r8) :: s_node                     ! soil wetness (-)
-    real(r8) :: icefrac(lbc:ubc,1:nlevsoi)
 
 !-----------------------------------------------------------------------
 
@@ -244,26 +237,17 @@ contains
 
     ! Assign local pointers to derived subtypes components (column-level)
 
-    snow_depth      => cps%snow_depth
-    snowdp             => cps%snowdp
-    frac_sno_eff      => cps%frac_sno_eff 
-    qflx_evap_soi     => pwf_a%qflx_evap_soi
-    h2osfc            => cws%h2osfc
-    frac_h2osfc       => cps%frac_h2osfc
-    t_h2osfc          => ces%t_h2osfc
-    qflx_drain_perched=> cwf%qflx_drain_perched
-    qflx_floodg       => clm_a2l%forc_flood
-    qflx_h2osfc_surf  => cwf%qflx_h2osfc_surf
-    cactive           => col%active
-    cgridcell         =>col%gridcell
-    clandunit         =>col%landunit
+!rtm_flood
+    qflx_floodg      => clm_a2l%forc_flood
+!rtm_flood
+    cgridcell         => col%gridcell
+    clandunit         => col%landunit
     ctype             => col%itype
     snl               => cps%snl
     t_grnd            => ces%t_grnd
     h2ocan            => pws_a%h2ocan
     h2osno            => cws%h2osno
     wf                => cps%wf
-    wf2               => cps%wf2
     snowice           => cws%snowice
     snowliq           => cws%snowliq
     zwt               => cws%zwt
@@ -282,7 +266,6 @@ contains
     h2osoi_liq        => cws%h2osoi_liq
     h2osoi_vol        => cws%h2osoi_vol
     t_soi_10cm         => ces%t_soi_10cm
-    tsoi17             => ces%tsoi17
     h2osoi_liqice_10cm => cws%h2osoi_liqice_10cm
     qflx_evap_tot     => pwf_a%qflx_evap_tot
     qflx_drain        => cwf%qflx_drain
@@ -292,6 +275,9 @@ contains
     qflx_irrig        => cwf%qflx_irrig
     endwb             => cwbal%endwb
     begwb             => cwbal%begwb
+    bsw2              => cps%bsw2
+    psisat            => cps%psisat
+    vwcsat            => cps%vwcsat
     soilpsi           => cps%soilpsi
     smp_l             => cws%smp_l
     hk_l              => cws%hk_l
@@ -336,7 +322,6 @@ contains
     do_capsnow        => cps%do_capsnow
     qflx_snwcp_ice    => pwf_a%qflx_snwcp_ice
     qflx_glcice       => cwf%qflx_glcice
-    smpmin            => cps%smpmin
     qflx_glcice_frz   => cwf%qflx_glcice_frz
 
     ! Determine time step and step size
@@ -356,19 +341,20 @@ contains
 
     ! Determine soil hydrology
 
-    ! moved vol_liq from SurfaceRunoff to Infiltration
     call SurfaceRunoff(lbc, ubc, lbp, ubp, num_hydrologyc, filter_hydrologyc, &
-                       num_urbanc, filter_urbanc, icefrac )
+                       num_urbanc, filter_urbanc, &
+                       vol_liq, icefrac )
 
     call Infiltration(lbc, ubc,  num_hydrologyc, filter_hydrologyc, &
-                      num_urbanc, filter_urbanc, vol_liq)
+                      num_urbanc, filter_urbanc)
 
     call SoilWater(lbc, ubc, num_hydrologyc, filter_hydrologyc, &
-                   num_urbanc, filter_urbanc, dwat, hk, dhkdw)
-
+                   num_urbanc, filter_urbanc, &
+                   vol_liq, dwat, hk, dhkdw)
 
     call Drainage(lbc, ubc, num_hydrologyc, filter_hydrologyc, &
-                  num_urbanc, filter_urbanc, vol_liq, icefrac)
+                  num_urbanc, filter_urbanc, &
+                  vol_liq, hk, icefrac)
 
     if (.not. is_perpetual()) then
 
@@ -441,20 +427,13 @@ contains
        end do
     end do
 
-! Calculate column average snow depth
-    do c = lbc,ubc
-       snowdp(c) = snow_depth(c) * frac_sno_eff(c)
-    end do
-
-   ! Determine ground temperature, ending water balance and volumetric soil water
+    ! Determine ground temperature, ending water balance and volumetric soil water
     ! Calculate soil temperature and total water (liq+ice) in top 10cm of soil
-    ! Calculate soil temperature and total water (liq+ice) in top 17cm of soil
     do fc = 1, num_nolakec
        c = filter_nolakec(fc)
        l = clandunit(c)
        if (ityplun(l) /= isturb) then
           t_soi_10cm(c) = 0._r8
-          tsoi17(c) = 0._r8
           h2osoi_liqice_10cm(c) = 0._r8
        end if
     end do
@@ -463,29 +442,16 @@ contains
           c = filter_nolakec(fc)
           l = clandunit(c)
           if (ityplun(l) /= isturb) then
-    ! soil T at top 17 cm added by F. Li and S. Levis
-            if (zi(c,j) <= 0.17_r8) then
-              fracl = 1._r8
-              tsoi17(c) = tsoi17(c) + t_soisno(c,j)*dz(c,j)*fracl
-            else
-              if (zi(c,j) > 0.17_r8 .and. zi(c,j-1) .lt. 0.17_r8) then 
-                fracl = (0.17_r8 - zi(c,j-1))/dz(c,j)
-                tsoi17(c) = tsoi17(c) + t_soisno(c,j)*dz(c,j)*fracl
-               end if
-            end if
-
             if (zi(c,j) <= 0.1_r8) then
               fracl = 1._r8
               t_soi_10cm(c) = t_soi_10cm(c) + t_soisno(c,j)*dz(c,j)*fracl
-              h2osoi_liqice_10cm(c) = h2osoi_liqice_10cm(c) + &
-              (h2osoi_liq(c,j)+h2osoi_ice(c,j))* &
+              h2osoi_liqice_10cm(c) = h2osoi_liqice_10cm(c) + (h2osoi_liq(c,j)+h2osoi_ice(c,j))* &
                                        fracl
             else
               if (zi(c,j) > 0.1_r8 .and. zi(c,j-1) .lt. 0.1_r8) then
                  fracl = (0.1_r8 - zi(c,j-1))/dz(c,j)
                  t_soi_10cm(c) = t_soi_10cm(c) + t_soisno(c,j)*dz(c,j)*fracl
-                 h2osoi_liqice_10cm(c) = h2osoi_liqice_10cm(c) + &
-                 (h2osoi_liq(c,j)+h2osoi_ice(c,j))* &
+                 h2osoi_liqice_10cm(c) = h2osoi_liqice_10cm(c) + (h2osoi_liq(c,j)+h2osoi_ice(c,j))* &
                                           fracl
               end if
             end if
@@ -498,20 +464,12 @@ contains
        c = filter_nolakec(fc)
        l = clandunit(c)
 
-       ! t_grnd is weighted average of exposed soil and snow
-       if (snl(c) < 0) then
-          t_grnd(c) = frac_sno_eff(c) * t_soisno(c,snl(c)+1) &
-               + (1 - frac_sno_eff(c)- frac_h2osfc(c)) * t_soisno(c,1) &
-               + frac_h2osfc(c) * t_h2osfc(c)
-       else
-          t_grnd(c) = (1 - frac_h2osfc(c)) * t_soisno(c,1) + frac_h2osfc(c) * t_h2osfc(c)
-       endif
-
-       if (ityplun(l)==isturb) then
-          t_grnd_u(c) = t_soisno(c,snl(c)+1)
-       else
+       t_grnd(c) = t_soisno(c,snl(c)+1)
+       if (ityplun(l) /= isturb) then
           t_soi_10cm(c) = t_soi_10cm(c)/0.1_r8
-           tsoi17(c) =  tsoi17(c)/0.17_r8         ! F. Li and S. Levis
+       end if
+       if (ityplun(l)==isturb) then
+         t_grnd_u(c) = t_soisno(c,snl(c)+1)
        end if
        if (ityplun(l)==istsoil .or. ityplun(l)==istcrop) then
          t_grnd_r(c) = t_soisno(c,snl(c)+1)
@@ -520,21 +478,15 @@ contains
           .or. ctype(c) == icol_shadewall .or. ctype(c) == icol_road_imperv) then
          endwb(c) = h2ocan(c) + h2osno(c)
        else
-          ! add h2osfc to water balance
-          endwb(c) = h2ocan(c) + h2osno(c) + h2osfc(c) + wa(c)
-
+         endwb(c) = h2ocan(c) + h2osno(c) + wa(c)
        end if
     end do
 
     do j = 1, nlevgrnd
        do fc = 1, num_nolakec
           c = filter_nolakec(fc)
-          if ((ctype(c) == icol_sunwall .or. ctype(c) == icol_shadewall &
-               .or. ctype(c) == icol_roof) .and. j > nlevurb) then
-          else
-            endwb(c) = endwb(c) + h2osoi_ice(c,j) + h2osoi_liq(c,j)
-            h2osoi_vol(c,j) = h2osoi_liq(c,j)/(dz(c,j)*denh2o) + h2osoi_ice(c,j)/(dz(c,j)*denice)
-          end if
+          endwb(c) = endwb(c) + h2osoi_ice(c,j) + h2osoi_liq(c,j)
+          h2osoi_vol(c,j) = h2osoi_liq(c,j)/(dz(c,j)*denh2o) + h2osoi_ice(c,j)/(dz(c,j)*denice)
        end do
     end do
 
@@ -547,14 +499,14 @@ contains
        g = cgridcell(c)
        if (ityplun(l)==istwet .or. ityplun(l)==istice      &
                               .or. ityplun(l)==istice_mec) then
-          qflx_drain(c)         = 0._r8
-          qflx_drain_perched(c) = 0._r8
-          qflx_h2osfc_surf(c)   = 0._r8
-          qflx_irrig(c)         = 0._r8
-          qflx_surf(c)          = 0._r8
-          qflx_infl(c)          = 0._r8
-          ! add flood water flux to runoff for wetlands/glaciers
+          qflx_drain(c) = 0._r8
+          qflx_irrig(c) = 0._r8
+          qflx_surf(c)  = 0._r8
+          qflx_infl(c)  = 0._r8
+
+!rtm_flood: add flood water flux to runoff for wetlands/glaciers
           qflx_qrgwl(c) = forc_rain(g) + forc_snow(g) + qflx_floodg(g) - qflx_evap_tot(c) - qflx_snwcp_ice(c) - &
+!rtm_flood
                           (endwb(c)-begwb(c))/dtime
           ! For dynamic topography, add meltwater from glacier_mec ice to the runoff.
           ! (Negative qflx_glcice => positive contribution to runoff)
@@ -571,13 +523,12 @@ contains
           qcharge(c)    = spval
           qflx_rsub_sat(c) = spval
        else if (ityplun(l) == isturb .and. ctype(c) /= icol_road_perv) then
-          fcov(c)               = spval
-          fsat(c)               = spval
-          qflx_drain_perched(c) = 0._r8
-          qflx_h2osfc_surf(c)   = 0._r8
-          qcharge(c)            = spval
-          qflx_rsub_sat(c)      = spval
+          fcov(c)       = spval
+          fsat(c)       = spval
+          qcharge(c)    = spval
+          qflx_rsub_sat(c) = spval
        end if
+
        ! If snow exceeds the thickness limit in glacier_mec columns, convert to an ice flux.
        ! For dynamic glacier topography, remove qflx_snwcp_ice from the runoff.
        ! Note that qflx_glcice can also have a negative component from melting of bare ice,
@@ -596,11 +547,8 @@ contains
 
        endif   ! istice_mec
 
-
-       qflx_runoff(c) = qflx_drain(c) + qflx_surf(c)  + qflx_h2osfc_surf(c) + qflx_qrgwl(c) + qflx_drain_perched(c)
-
-       if ((ityplun(l)==istsoil .or. ityplun(l)==istcrop) &
-           .and. cactive(c)) then
+       qflx_runoff(c) = qflx_drain(c) + qflx_surf(c) + qflx_qrgwl(c)
+       if (ityplun(l)==istsoil .and. col%wtgcell(c) > 0.0_r8 ) then
           qflx_runoff(c) = qflx_runoff(c) - qflx_irrig(c)
        end if
        if (ityplun(l)==isturb) then
@@ -611,22 +559,65 @@ contains
 
     end do
 
+    if (use_cn) then
+       do j = 1, nlevgrnd
+          do fc = 1, num_hydrologyc
+             c = filter_hydrologyc(fc)
+             
+             if (h2osoi_liq(c,j) > 0._r8) then
+                vwc = h2osoi_liq(c,j)/(dz(c,j)*denh2o)
+                
+                ! the following limit set to catch very small values of 
+                ! fractional saturation that can crash the calculation of psi
+                
+                fsattmp = max(vwc/vwcsat(c,j), 0.001_r8)
+                psi = psisat(c,j) * (fsattmp)**bsw2(c,j)
+                soilpsi(c,j) = min(max(psi,-15.0_r8),0._r8)
+             else 
+                soilpsi(c,j) = -15.0_r8
+             end if
+          end do
+       end do
+    end if
 
-    ! Update smp_l for history and for ch4Mod.
-    ! ZMS: Note, this form, which seems to be the same as used in SoilWater, DOES NOT distinguish between
-    ! ice and water volume, in contrast to the soilpsi calculation above. It won't be used in ch4Mod if
-    ! t_soisno <= tfrz, though.
-    do j = 1, nlevgrnd
+    if (use_cn) then
+       ! Available soil water up to a depth of 0.5 m.
+       ! Potentially available soil water (=whc) up to a depth of 0.5 m.
+       ! Water content as fraction of whc up to a depth of 0.5 m.
+       
        do fc = 1, num_hydrologyc
           c = filter_hydrologyc(fc)
-
-          s_node = max(h2osoi_vol(c,j)/watsat(c,j), 0.01_r8)
-          s_node = min(1.0_r8, s_node)
-
-          smp_l(c,j) = -sucsat(c,j)*s_node**(-bsw(c,j))
-          smp_l(c,j) = max(smpmin(c), smp_l(c,j))
+          rwat(c) = 0._r8
+          swat(c) = 0._r8
+          rz(c)   = 0._r8
        end do
-    end do
+       
+       do j = 1, nlevgrnd
+          do fc = 1, num_hydrologyc
+             c = filter_hydrologyc(fc)
+             !if (z(c,j)+0.5_r8*dz(c,j) <= 0.5_r8) then
+             if (z(c,j)+0.5_r8*dz(c,j) <= 0.05_r8) then
+                watdry = watsat(c,j) * (316230._r8/sucsat(c,j)) ** (-1._r8/bsw(c,j))
+                rwat(c) = rwat(c) + (h2osoi_vol(c,j)-watdry) * dz(c,j)
+                swat(c) = swat(c) + (watsat(c,j)    -watdry) * dz(c,j)
+                rz(c) = rz(c) + dz(c,j)
+             end if
+          end do
+       end do
+       
+       do fc = 1, num_hydrologyc
+          c = filter_hydrologyc(fc)
+          if (rz(c) /= 0._r8) then
+             tsw  = rwat(c)/rz(c)
+             stsw = swat(c)/rz(c)
+          else
+             watdry = watsat(c,1) * (316230._r8/sucsat(c,1)) ** (-1._r8/bsw(c,1))
+             tsw = h2osoi_vol(c,1) - watdry
+             stsw = watsat(c,1) - watdry
+          end if
+          wf(c) = tsw/stsw
+       end do
+    end if
 
 
     !  Calculate column-integrated aerosol masses, and

@@ -90,7 +90,7 @@ CONTAINS
                                    nbrdlf_evr_shrub,          nbrdlf_dcd_tmp_shrub, &
                                    nbrdlf_dcd_brl_shrub,      nc3_arctic_grass,     &
                                    nc3_nonarctic_grass,       nc4_grass, nc3crop,   &
-                                   nc3irrig,       npcropmin, npcropmax
+                                   nirrig,         npcropmin, npcropmax
 
     implicit none 
 
@@ -100,10 +100,11 @@ CONTAINS
 
     ! ------------------------ local variables ------------------------ 
     ! local pointers to implicit in arguments 
-    logical , pointer :: pactive(:)       ! true=>do computations on this pft (see reweightMod for details)
     integer , pointer :: plandunit(:)     !pft's landunit index
     integer , pointer :: ivt(:)           !landunit type
+    integer , pointer :: itypveg(:)       !vegetation type for current pft  
     integer , pointer :: pgridcell(:)     !pft's gridcell index
+    real(r8), pointer :: pwtgcell(:)      !weight of pft relative to corresponding gridcell
     real(r8), pointer :: elai(:)          !one-sided leaf area index with burying by snow 
     real(r8), pointer :: forc_t(:)        !atmospheric temperature (Kelvin) 
     real(r8), pointer :: forc_q(:)        !atmospheric specific humidity (kg/kg) 
@@ -111,6 +112,8 @@ CONTAINS
     real(r8), pointer :: latdeg(:)        !latitude (degrees) 
     real(r8), pointer :: londeg(:)        !longitude (degrees) 
     real(r8), pointer :: forc_rain(:)     !rain rate [mm/s] 
+    real(r8), pointer :: forc_snow(:)     !snow rate [mm/s]   
+    real(r8), pointer :: forc_lwrad(:)    !direct beam radiation (visible only) 
     real(r8), pointer :: forc_solad(:,:)  !direct beam radiation (visible only) 
     real(r8), pointer :: forc_solai(:,:)  !direct beam radiation (visible only) 
     real(r8), pointer :: ram1(:)          !aerodynamical resistance 
@@ -122,7 +125,7 @@ CONTAINS
     real(r8), pointer :: annlai(:,:)      !12 months of monthly lai from input data set 
     real(r8), pointer :: mlaidiff(:)      !difference in lai between month one and month two 
     real(r8), pointer :: velocity(:,:)
-    real(r8), pointer :: snow_depth(:)        ! snow height (m)
+    real(r8), pointer :: snowdp(:)        ! snow height (m)
 
     integer, pointer :: pcolumn(:)        ! column index associated with each pft
     integer :: c
@@ -203,10 +206,9 @@ CONTAINS
     forc_psrf  => clm_a2l%forc_pbot
     forc_rain  => clm_a2l%forc_rain 
 
-    latdeg     =>  grc%latdeg
-    londeg     =>  grc%londeg
-    pactive    => pft%active
-    ivt        =>pft%itype
+    latdeg     => grc%latdeg
+    londeg     => grc%londeg
+    ivt        => pft%itype
     elai       => pps%elai 
     ram1       => pps%ram1 
     vds        => pps%vds
@@ -220,17 +222,18 @@ CONTAINS
     forc_solai => clm_a2l%forc_solai 
     forc_solad => clm_a2l%forc_solad
 
-    pgridcell  =>pft%gridcell
-    plandunit  =>pft%landunit
+    pwtgcell   => pft%wtgcell  
+    pgridcell  => pft%gridcell
+    plandunit  => pft%landunit
 
-    pcolumn    =>pft%column
+    pcolumn    => pft%column
     itypelun   => lun%itype
 
     h2osoi_vol => cws%h2osoi_vol
 
     velocity   => pdd%drydepvel ! cm/sec
 
-    snow_depth        => cps%snow_depth
+    snowdp        => cps%snowdp
 
     ! Assign local pointers to original implicit out arrays 
     !_________________________________________________________________ 
@@ -239,7 +242,8 @@ CONTAINS
     pft_loop: do pi = lbp,ubp
        l = plandunit(pi)
 
-      active: if (pactive(pi)) then
+       ! Note: some glacier_mec pfts may have zero weight
+       gcell_wght: if (pwtgcell(pi)>0._r8 .or. itypelun(l)==istice_mec) then
 
           c = pcolumn(pi)
           g = pgridcell(pi)
@@ -249,8 +253,8 @@ CONTAINS
           spec_hum   = forc_q(g)
           rain       = forc_rain(g) 
           sfc_temp   = forc_t(g) 
-          lat        = grc%latdeg(g) 
-          lon        = grc%londeg(g) 
+          lat        = latdeg(g) 
+          lon        = londeg(g) 
           solar_flux = forc_solad(g,1) 
           clmveg     = ivt(pi) 
           soilw = h2osoi_vol(c,1)
@@ -274,7 +278,7 @@ CONTAINS
           if (clmveg == nc3_nonarctic_grass                 ) wesveg = 3 
           if (clmveg == nc4_grass                           ) wesveg = 3 
           if (clmveg == nc3crop                             ) wesveg = 2 
-          if (clmveg == nc3irrig                            ) wesveg = 2 
+          if (clmveg == nirrig                              ) wesveg = 2 
           if (clmveg >= npcropmin .and. clmveg <= npcropmax ) wesveg = 2 
           if (wesveg == wveg_unset )then
              write(iulog,*) 'clmveg = ', clmveg, 'itypelun = ', itypelun(l)
@@ -319,7 +323,7 @@ CONTAINS
                 wesveg       = 1
                 index_season = 2
              end if
-          else if ( snow_depth(c) > 0 ) then
+          else if ( snowdp(c) > 0 ) then
              index_season = 4
           else if(elai(pi).gt.0.5_r8*maxlai) then  
              index_season = 1  
@@ -434,27 +438,22 @@ CONTAINS
                    end if
                 end if
              end if
-
-             rs=(fsun(pi)*rssun(pi))+(rssha(pi)*(1._r8-fsun(pi)))
+             
+             rs=(fsun(pi)*rssun(pi))+(rssha(pi)*(1.-fsun(pi)))
              !-------------------------------------------------------------------------------------
              ! no deposition on snow, ice, desert, and water
              !-------------------------------------------------------------------------------------
-             if( wesveg == 1 .or. wesveg == 7 .or. wesveg == 8 .or. index_season == 4 ) then 
+             if( wesveg == 1 .or. wesveg == 7 .or. wesveg == 8 .or. index_season == 4 ) then
                 rclx(ispec)=1.e36_r8
                 rsmx(ispec)=1.e36_r8
                 rlux(ispec)=1.e36_r8
-             else 
-                
-                if (rs==0._r8) then ! fvitt -- what to do when rs is zero ???
-                   rsmx(ispec) = 1.e36_r8
-                else
-                   rsmx(ispec) = dewm*rs*drat(ispec)+rmx
-                endif
+             else
 
-                rclx(ispec) = cts + 1._r8/((heff(ispec)/(1.e5_r8*rcls(index_season,wesveg))) + & 
-                                           (foxd(ispec)/rclo(index_season,wesveg))) 
-                rlux(ispec) = cts + rlu(index_season,wesveg)/(1.e-5_r8*heff(ispec)+foxd(ispec)) 
+                rsmx(ispec) = dewm*rs*drat(ispec)+rmx
 
+                rclx(ispec) = cts + 1._r8/((heff(ispec)/(1.e5_r8*rcls(index_season,wesveg))) + &
+                              (foxd(ispec)/rclo(index_season,wesveg)))
+                rlux(ispec) = cts + rlu(index_season,wesveg)/(1.e-5_r8*heff(ispec)+foxd(ispec))
              endif
 
              !-------------------------------------------------------------------------------------
@@ -549,7 +548,7 @@ CONTAINS
              ! compute rc 
              ! 
              rc = 1._r8/((1._r8/rsmx(ispec))+(1._r8/rlux(ispec)) + & 
-                        (1._r8/(rdc+rclx(ispec)))+(1._r8/(rac(index_season,wesveg)+rgsx(ispec))))
+                        (1._r8/(rdc+rclx(ispec)))+(1._r8/(rac(index_season,wesveg)+rgsx(ispec)))) 
              rc = max( 10._r8, rc)
              !
              ! assume no surface resistance for SO2 over water
@@ -572,7 +571,7 @@ CONTAINS
              end select
           end do species_loop3
 
-       endif active
+       endif gcell_wght
 
     end do pft_loop
 

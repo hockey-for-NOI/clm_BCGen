@@ -15,23 +15,13 @@ module Hydrology1Mod
 !     of foliage that is dry and transpiring.
 ! (4) snow layer initialization if the snow accumulation exceeds 10 mm.
 !
-! !USES:
-  use shr_kind_mod, only: r8 => shr_kind_r8
-  use clm_varctl,   only: iulog
-  use abortutils,   only: endrun
-  use shr_sys_mod,  only: shr_sys_flush
-
 ! !PUBLIC TYPES:
    implicit none
    save
 !
 ! !PUBLIC MEMBER FUNCTIONS:
-   public :: Hydrology1_readnl ! Read namelist
-   public :: Hydrology1        ! Run
-!-----------------------------------------------------------------------
-! !PRIVATE DATA MEMBERS:
+   public :: Hydrology1
 !
-   integer :: oldfflag=0                 ! use old fsno parameterization (N&Y07) 
 ! !REVISION HISTORY:
 ! Created by Mariana Vertenstein
 !
@@ -39,58 +29,6 @@ module Hydrology1Mod
 !-----------------------------------------------------------------------
 
 contains
-
-!-----------------------------------------------------------------------
-!BOP
-!
-! !IROUTINE: Hydrology1_readnl
-!
-! !INTERFACE:
-   subroutine Hydrology1_readnl( NLFilename )
-!
-! !DESCRIPTION:
-! Read the namelist for Hydrology1
-!
-! !USES:
-    use spmdMod       , only : masterproc, mpicom
-    use fileutils     , only : getavu, relavu, opnfil
-    use shr_nl_mod    , only : shr_nl_find_group_name
-    use shr_mpi_mod   , only : shr_mpi_bcast
-! !ARGUMENTS:
-    character(len=*), intent(IN) :: NLFilename ! Namelist filename
-! !LOCAL VARIABLES:
-    integer :: ierr                 ! error code
-    integer :: unitn                ! unit for namelist file
-    character(len=32) :: subname = 'Hydrology1_readnl'  ! subroutine name
-!EOP
-!-----------------------------------------------------------------------
-    namelist / clm_hydrology1_inparm / oldfflag
-
-    ! ----------------------------------------------------------------------
-    ! Read namelist from standard input. 
-    ! ----------------------------------------------------------------------
-
-    if ( masterproc )then
-
-       unitn = getavu()
-       write(iulog,*) 'Read in clm_hydrology1_inparm  namelist'
-       call opnfil (NLFilename, unitn, 'F')
-       call shr_nl_find_group_name(unitn, 'clm_hydrology1_inparm', status=ierr)
-       if (ierr == 0) then
-          read(unitn, clm_hydrology1_inparm, iostat=ierr)
-          if (ierr /= 0) then
-             call endrun(subname // ':: ERROR reading clm_hydrology1_inparm namelist')
-          end if
-       end if
-       call relavu( unitn )
-
-    end if
-    ! Broadcast namelist variables read in
-    call shr_mpi_bcast(oldfflag, mpicom)
-
-   end subroutine Hydrology1_readnl
-
-!-----------------------------------------------------------------------
 
 !-----------------------------------------------------------------------
 !BOP
@@ -116,12 +54,8 @@ contains
     use clmtype
     use clm_atmlnd   , only : clm_a2l
     use clm_varcon   , only : tfrz, istice, istwet, istsoil, istice_mec, isturb, &
-                              istcrop, icol_roof, icol_sunwall, icol_shadewall,&
-                              hfus,denice, &
-                              zlnd,rpi,spval
-    use clm_varctl   , only : subgridflag
-    use clm_varpar   , only : nlevsoi,nlevsno
-    use H2OSfcMod    , only : FracH2oSfc
+                              icol_roof, icol_sunwall, icol_shadewall
+    use clm_varcon   , only : istcrop
     use FracWetMod   , only : FracWet
     use clm_time_manager , only : get_step_size
     use subgridAveMod, only : p2c
@@ -138,7 +72,7 @@ contains
     integer, intent(in) :: filter_nolakep(ubp-lbp+1)    ! pft filter for non-lake points
 !
 ! !CALLED FROM:
-! subroutine clm_driver
+! subroutine clm_driver1
 !
 ! !REVISION HISTORY:
 ! 15 September 1999: Yongjiu Dai; Initial code
@@ -152,17 +86,8 @@ contains
 !
 ! local pointers to original implicit in arrays
 !
-    real(r8), pointer :: swe_old(:,:)      ! snow water before update
-    real(r8), pointer :: frac_sno_eff(:)   ! eff. fraction of ground covered by snow (0 to 1)
-    real(r8), pointer :: frac_sno(:)       ! fraction of ground covered by snow (0 to 1)
-    real(r8), pointer :: h2osfc(:)         ! surface water (mm)
-    real(r8), pointer :: frac_h2osfc(:)    ! fraction of ground covered by surface water (0 to 1)
-    real(r8), pointer :: qflx_snow_h2osfc(:)!snow falling on surface water (mm/s)
-    real(r8), pointer :: int_snow(:)       ! integrated snowfall [mm]
-    real(r8), pointer :: qflx_floodg(:)    ! gridcell flux of flood water from RTM
-    real(r8), pointer :: qflx_floodc(:)    ! column flux of flood water from RTM
-    real(r8), pointer :: qflx_snow_melt(:) ! snow melt from previous time step
-    real(r8), pointer :: n_melt(:)         ! SCA shape parameter
+    real(r8), pointer :: qflx_floodg(:)   ! gridcell flux of flood water from RTM
+    real(r8), pointer :: qflx_floodc(:)   ! column flux of flood water from RTM
     integer , pointer :: cgridcell(:)      ! columns's gridcell
     integer , pointer :: clandunit(:)      ! columns's landunit
     integer , pointer :: pgridcell(:)      ! pft's gridcell
@@ -187,7 +112,7 @@ contains
 ! local pointers to original implicit inout arrays
 !
     integer , pointer :: snl(:)            ! number of snow layers
-    real(r8), pointer :: snow_depth(:)         ! snow height (m)
+    real(r8), pointer :: snowdp(:)         ! snow height (m)
     real(r8), pointer :: h2osno(:)         ! snow water (mm H2O)
     real(r8), pointer :: h2ocan(:)         ! total canopy water (mm H2O)
     real(r8), pointer :: qflx_irrig(:)          ! irrigation amount (mm/s)
@@ -254,22 +179,11 @@ contains
     real(r8) :: qflx_through_snow(lbp:ubp)   ! direct snow throughfall [mm/s]
     real(r8) :: qflx_prec_grnd_snow(lbp:ubp) ! snow precipitation incident on ground [mm/s]
     real(r8) :: qflx_prec_grnd_rain(lbp:ubp) ! rain precipitation incident on ground [mm/s]
-    real(r8) :: z_avg                        ! grid cell average snow depth
-    real(r8) :: rho_avg                      ! avg density of snow column
-    real(r8) :: temp_snow_depth,temp_intsnow     ! temporary variables
-    real(r8) :: fmelt
-    real(r8) :: smr
-    real(r8) :: delf_melt
-    real(r8) :: fsno_new
-    real(r8) :: accum_factor
-    real(r8) :: newsnow(lbc:ubc)
-    real(r8) :: snowmelt(lbc:ubc)
-    integer  :: j
 !-----------------------------------------------------------------------
 
     ! Assign local pointers to derived type members (gridcell-level)
 
-    pgridcell          =>pft%gridcell
+    pgridcell          => pft%gridcell
     forc_rain          => clm_a2l%forc_rain
     forc_snow          => clm_a2l%forc_snow
 
@@ -279,28 +193,18 @@ contains
 
     ! Assign local pointers to derived type members (column-level)
 
-    swe_old            => cws%swe_old
-    frac_sno_eff       => cps%frac_sno_eff  
-    frac_sno           => cps%frac_sno 
-    frac_h2osfc        => cps%frac_h2osfc
-    h2osfc             => cws%h2osfc
-    qflx_snow_h2osfc   => cwf%qflx_snow_h2osfc
-    int_snow           => cws%int_snow
     qflx_floodg        => clm_a2l%forc_flood
     qflx_floodc        => cwf%qflx_floodc
-    qflx_snow_melt     => cwf%qflx_snow_melt
-    n_melt             => cps%n_melt
-
-    cgridcell          =>col%gridcell
-    clandunit          =>col%landunit
+    cgridcell          => col%gridcell
+    clandunit          => col%landunit
     ctype              => col%itype
-    pfti               =>col%pfti
-    npfts              =>col%npfts
+    pfti               => col%pfti
+    npfts              => col%npfts
     do_capsnow         => cps%do_capsnow
     forc_t             => ces%forc_t
     t_grnd             => ces%t_grnd
     snl                => cps%snl
-    snow_depth             => cps%snow_depth
+    snowdp             => cps%snowdp
     h2osno             => cws%h2osno
     zi                 => cps%zi
     dz                 => cps%dz
@@ -332,8 +236,8 @@ contains
 
     ! Assign local pointers to derived type members (pft-level)
 
-    plandunit          =>pft%landunit
-    pcolumn            =>pft%column
+    plandunit          => pft%landunit
+    pcolumn            => pft%column
     dewmx              => pps%dewmx
     frac_veg_nosno     => pps%frac_veg_nosno
     elai               => pps%elai
@@ -493,7 +397,10 @@ contains
 
     call p2c(num_nolakec, filter_nolakec, qflx_snow_grnd_pft, qflx_snow_grnd_col)
 
-    ! apply gridcell flood water flux to non-lake columns
+!rtm_flood: apply gridcell flood water flux to non-lake columns
+!                    no inputs to urban wall columns, as above with atm inputs
+!dir$ concurrent
+!cdir nodep
     do f = 1, num_nolakec
        c = filter_nolakec(f)
        g = cgridcell(c)
@@ -503,6 +410,7 @@ contains
           qflx_floodc(c) = 0._r8
        endif    
     enddo
+!rtm_flood
 
     ! Determine snow height and snow water
 
@@ -515,23 +423,8 @@ contains
        ! U.S.Department of Agriculture Forest Service, Project F,
        ! Progress Rep. 1, Alta Avalanche Study Center:Snow Layer Densification.
 
-       qflx_snow_h2osfc(c) = 0._r8
-       ! set temporary variables prior to updating
-       temp_snow_depth=snow_depth(c)
-       ! save initial snow content
-       do j= -nlevsno+1,snl(c)
-          swe_old(c,j) = 0.0_r8
-       end do
-       do j= snl(c)+1,0
-          swe_old(c,j)=h2osoi_liq(c,j)+h2osoi_ice(c,j)
-       enddo
-
-
        if (do_capsnow(c)) then
           dz_snowf = 0._r8
-          newsnow(c) = (1._r8 - frac_h2osfc(c)) * qflx_snow_grnd_col(c) * dtime
-          frac_sno(c)=1._r8
-          int_snow(c) = 5.e2_r8
        else
           if (forc_t(c) > tfrz + 2._r8) then
              bifall=50._r8 + 1.7_r8*(17.0_r8)**1.5_r8
@@ -540,129 +433,15 @@ contains
           else
              bifall=50._r8
           end if
+          dz_snowf = qflx_snow_grnd_col(c)/bifall
+          snowdp(c) = snowdp(c) + dz_snowf*dtime
+          h2osno(c) = h2osno(c) + qflx_snow_grnd_col(c)*dtime  ! snow water equivalent (mm)
 
-          ! newsnow is all snow that doesn't fall on h2osfc
-          newsnow(c) = (1._r8 - frac_h2osfc(c)) * qflx_snow_grnd_col(c) * dtime
-
-          ! update int_snow
-          int_snow(c) = max(int_snow(c),h2osno(c)) !h2osno could be larger due to frost
-
-          ! snowmelt from previous time step * dtime
-          snowmelt(c) = qflx_snow_melt(c) * dtime
-
-          ! set shape factor for accumulation of snow
-          accum_factor=0.1
-
-          if (h2osno(c) > 0.0) then
-             
-             !======================  FSCA PARAMETERIZATIONS  ======================
-             ! fsca parameterization based on *changes* in swe
-             ! first compute change from melt during previous time step
-             if(snowmelt(c) > 0._r8) then
-
-                   smr=min(1._r8,(h2osno(c))/(int_snow(c)))
-
-                   frac_sno(c) = 1. - (acos(min(1._r8,(2.*smr - 1._r8)))/rpi)**(n_melt(c))
-
-             endif
-
-             ! update fsca by new snow event, add to previous fsca
-             if (newsnow(c) > 0._r8) then
-                fsno_new = 1._r8 - (1._r8 - tanh(accum_factor*newsnow(c)))*(1._r8 - frac_sno(c))
-                frac_sno(c) = fsno_new
-
-                ! reset int_snow after accumulation events
-                temp_intsnow= (h2osno(c) + newsnow(c)) &
-                     / (0.5*(cos(rpi*(1._r8-max(frac_sno(c),1e-6_r8))**(1./n_melt(c)))+1._r8))
-                int_snow(c) = min(1.e8_r8,temp_intsnow)
-             endif
-
-             !====================================================================
-
-             ! for subgrid fluxes
-             if (subgridflag ==1 .and. ltype(l) /= isturb) then
-                if (frac_sno(c) > 0._r8)then
-                    snow_depth(c)=snow_depth(c) + newsnow(c)/(bifall * frac_sno(c))
-                else
-                    snow_depth(c)=0._r8
-                end if
-             else
-                ! for uniform snow cover
-                snow_depth(c)=snow_depth(c)+newsnow(c)/bifall
-             endif
-
-             ! use original fsca formulation (n&y 07)
-             if (oldfflag == 1) then 
-                ! snow cover fraction in Niu et al. 2007
-                if(snow_depth(c) .gt. 0.0_r8)  then
-                   frac_sno(c) = tanh(snow_depth(c)/(2.5_r8*zlnd* &
-                        (min(800._r8,(h2osno(c)+ newsnow(c))/snow_depth(c))/100._r8)**1._r8) )
-                endif
-                if(h2osno(c) < 1.0_r8)  then
-                   frac_sno(c)=min(frac_sno(c),h2osno(c))
-                endif
-             endif
-
-          else !h2osno == 0
-             ! initialize frac_sno and snow_depth when no snow present initially
-             if (newsnow(c) > 0._r8) then 
-                z_avg = newsnow(c)/bifall
-                fmelt=newsnow(c)
-                frac_sno(c) = tanh(accum_factor*newsnow(c))
-
-                ! make int_snow consistent w/ new fsno, h2osno
-                int_snow(c) = 0. !reset prior to adding newsnow below
-                temp_intsnow= (h2osno(c) + newsnow(c)) &
-                     / (0.5*(cos(rpi*(1._r8-max(frac_sno(c),1e-6_r8))**(1./n_melt(c)))+1._r8))
-                int_snow(c) = min(1.e8_r8,temp_intsnow)
-
-                ! update snow_depth and h2osno to be consistent with frac_sno, z_avg
-                if (subgridflag ==1 .and. ltype(l) /= isturb) then
-                   snow_depth(c)=z_avg/frac_sno(c)
-                else
-                   snow_depth(c)=newsnow(c)/bifall
-                endif
-                ! use n&y07 formulation
-                if (oldfflag == 1) then 
-                   ! snow cover fraction in Niu et al. 2007
-                   if(snow_depth(c) .gt. 0.0_r8)  then
-                      frac_sno(c) = tanh(snow_depth(c)/(2.5_r8*zlnd* &
-                           (min(800._r8,newsnow(c)/snow_depth(c))/100._r8)**1._r8) )
-                   endif
-                endif
-             else
-                z_avg = 0._r8
-                snow_depth(c) = 0._r8
-                frac_sno(c) = 0._r8
-             endif
-          endif ! end of h2osno > 0
-
-          ! snow directly falling on surface water melts, increases h2osfc
-          qflx_snow_h2osfc(c) = frac_h2osfc(c)*qflx_snow_grnd_col(c)
-
-          ! update h2osno for new snow
-          h2osno(c) = h2osno(c) + newsnow(c) 
-          int_snow(c) = int_snow(c) + newsnow(c)
-
-          ! update change in snow depth
-          dz_snowf = (snow_depth(c) - temp_snow_depth) / dtime
-
-        end if !end of do_capsnow construct
-
-        ! set frac_sno_eff variable
-        if (ltype(l) == istsoil .or. ltype(l) == istcrop) then
-           if (subgridflag ==1) then 
-              frac_sno_eff(c) = frac_sno(c)
-           else
-              frac_sno_eff(c) = 1._r8
-           endif
-       else
-          frac_sno_eff(c) = 1._r8
-       endif
+       end if
 
        if (ltype(l)==istwet .and. t_grnd(c)>tfrz) then
           h2osno(c)=0._r8
-          snow_depth(c)=0._r8
+          snowdp(c)=0._r8
        end if
 
        ! When the snow accumulation exceeds 10 mm, initialize snow layer
@@ -670,10 +449,10 @@ contains
        ! as the surface air temperature
 
        newnode = 0    ! flag for when snow node will be initialized
-       if (snl(c) == 0 .and. qflx_snow_grnd_col(c) > 0.0_r8 .and. frac_sno(c)*snow_depth(c) >= 0.01_r8) then
+       if (snl(c) == 0 .and. qflx_snow_grnd_col(c) > 0.0_r8 .and. snowdp(c) >= 0.01_r8) then
           newnode = 1
           snl(c) = -1
-          dz(c,0) = snow_depth(c)                       ! meter
+          dz(c,0) = snowdp(c)                       ! meter
           z(c,0) = -0.5_r8*dz(c,0)
           zi(c,-1) = -dz(c,0)
           t_soisno(c,0) = min(tfrz, forc_t(c))      ! K
@@ -711,14 +490,11 @@ contains
        ! later.
 
        if (snl(c) < 0 .and. newnode == 0) then
-          h2osoi_ice(c,snl(c)+1) = h2osoi_ice(c,snl(c)+1)+newsnow(c)
+          h2osoi_ice(c,snl(c)+1) = h2osoi_ice(c,snl(c)+1)+dtime*qflx_snow_grnd_col(c)
           dz(c,snl(c)+1) = dz(c,snl(c)+1)+dz_snowf*dtime
        end if
 
     end do
-
-    ! update surface water fraction (this may modify frac_sno)
-    call FracH2oSfc(lbc, ubc, num_nolakec, filter_nolakec,frac_h2osfc)
 
   end subroutine Hydrology1
 

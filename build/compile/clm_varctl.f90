@@ -11,7 +11,7 @@ module clm_varctl
 ! Module containing run control variables
 !
 ! !USES:
-  use shr_kind_mod, only: r8 => shr_kind_r8, SHR_KIND_CL
+  use shr_kind_mod, only: r8 => shr_kind_r8
 !
 ! !PUBLIC MEMBER FUNCTIONS:
   implicit none
@@ -66,10 +66,6 @@ module clm_varctl
   character(len=256), public :: fsnowaging   = ' '      ! snow aging parameters file name
 
 !
-! Irrigate logic
-!
-  logical, public :: irrigate = .false.            ! do not irrigate by default
-
 ! Landunit logic
 !
   logical, public :: create_crop_landunit = .false.     ! true => separate crop landunit is not created by default
@@ -79,21 +75,11 @@ module clm_varctl
 ! BGC logic and datasets
 !
   character(len=16), public :: co2_type = 'constant'    ! values of 'prognostic','diagnostic','constant'
-  integer, public :: spinup_state = 0    ! State of the model for the accelerated decomposition (AD) spinup. 0 (default) = normal model; 1 = AD SPINUP
-  logical, public :: override_bgc_restart_mismatch_dump = .false. ! used to override an error check on reading in restart files
-
 !
 ! Physics
 !
-  integer,  public :: subgridflag = 1                   !use subgrid fluxes
   logical,  public :: wrtdia       = .false.            ! true => write global average diagnostics to std out
   real(r8), public :: co2_ppmv     = 355._r8            ! atmospheric CO2 molar ratio (by volume) (umol/mol)
-
-
-
-
-  logical,  public :: anoxia       = .false.
-
 
  ! C isotopes
   logical, public :: use_c13 = .false.                  ! true => use C-13 model
@@ -131,13 +117,53 @@ module clm_varctl
   character(len=256), public :: rpntdir = '.'            ! directory name for local restart pointer file
   character(len=256), public :: rpntfil = 'rpointer.lnd' ! file name for local restart pointer file
 !
-! Error growth perturbation limit
-!
-  real(r8), public :: pertlim = 0.0_r8                  ! perturbation limit when doing error growth test
-!
-! To retrieve namelist
-  character(len=SHR_KIND_CL), public :: NLFilename_in ! Namelist filename
-!
+! Migration of CPP variables
+! 
+
+
+
+  logical, public :: use_cn = .false.
+
+
+
+
+  logical, public :: use_cndv = .false.
+
+
+
+
+  logical, public :: use_crop = .false.
+
+
+
+
+  logical, public :: use_snicar_frc = .false.
+
+
+
+
+  logical, public :: use_nofire = .false.
+
+
+
+
+  logical, public :: use_vancouver = .false.
+
+
+
+
+  logical, public :: use_mexicocity = .false.
+
+
+
+
+  logical, public :: use_ad_spinup = .false.
+
+
+
+
+  logical, public :: use_exit_spinup = .false.
+
 !
 ! !PRIVATE DATA MEMBERS:
 !
@@ -240,11 +266,11 @@ contains
        allocate_all_vegpfts = .true.
     else
        allocate_all_vegpfts = .false.
-
-
-
-
-
+       if (use_crop) then
+          write(iulog,*)'maxpatch_pft = ',maxpatch_pft,&
+               ' does NOT equal numpft+1 = ',numpft+1
+          call shr_sys_abort( subname//' ERROR:: Can NOT turn CROP on without all PFTs' )
+       end if
     end if
 
     if (masterproc) then
@@ -263,9 +289,9 @@ contains
        if (create_crop_landunit .and. .not.allocate_all_vegpfts) &
           call shr_sys_abort( subname//' ERROR:: maxpft<numpft+1 is currently not supported with create_crop_landunit option' )
        if (fpftdyn /= ' ') then
-
-
-
+          if (use_cndv) then
+             call shr_sys_abort( subname//' ERROR:: dynamic landuse is currently not supported with CNDV option' )
+          end if
        end if
 
        ! Check on run type
@@ -285,12 +311,6 @@ contains
 
        if ( single_column .and. (scmlat == rundef  .or. scmlon == rundef ) ) &
           call shr_sys_abort( subname//' ERROR:: single column mode on -- but scmlat and scmlon are NOT set' )
-
-
-       if ( anoxia ) then
-          call shr_sys_abort( subname//'ERROR:: anoxia is turned on, but this currently requires turning on the CH4 submodel')
-       end if
-
 
     endif   ! end of if-masterproc if-block
 

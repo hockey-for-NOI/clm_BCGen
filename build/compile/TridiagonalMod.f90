@@ -39,10 +39,6 @@ contains
 !
 ! !USES:
     use shr_kind_mod, only: r8 => shr_kind_r8
-    use clmtype
-    use clm_varpar    , only : nlevurb
-    use clm_varcon    , only : icol_roof, icol_sunwall, icol_shadewall
-    use clm_varctl    , only : iulog
 !
 ! !ARGUMENTS:
     implicit none
@@ -56,10 +52,6 @@ contains
     real(r8), intent(in)    :: c(lbc:ubc, lbj:ubj)    ! "c" right off diagonal tridiagonal matrix
     real(r8), intent(in)    :: r(lbc:ubc, lbj:ubj)    ! "r" forcing term of tridiagonal matrix
     real(r8), intent(inout) :: u(lbc:ubc, lbj:ubj)    ! solution
-! local pointers to original implicit in arguments
-!
-    integer , pointer :: ctype(:)           ! column type
-
 !
 ! !CALLED FROM:
 ! subroutine BiogeophysicsLake in module BiogeophysicsLakeMod
@@ -80,10 +72,6 @@ contains
     real(r8) :: bet(lbc:ubc)              !temporary
 !-----------------------------------------------------------------------
 
-    ! Assign local pointers to derived subtypes components (column-level)
-
-    ctype          => col%itype
-
     ! Solve the matrix
 
     do fc = 1,numf
@@ -94,27 +82,13 @@ contains
     do j = lbj, ubj
        do fc = 1,numf
           ci = filter(fc)
-          if ((ctype(ci) == icol_sunwall .or. ctype(ci) == icol_shadewall &
-              .or. ctype(ci) == icol_roof) .and. j <= nlevurb) then
-             if (j >= jtop(ci)) then
-                if (j == jtop(ci)) then
-                   u(ci,j) = r(ci,j) / bet(ci)
-                else
-                   gam(ci,j) = c(ci,j-1) / bet(ci)
-                   bet(ci) = b(ci,j) - a(ci,j) * gam(ci,j)
-                   u(ci,j) = (r(ci,j) - a(ci,j)*u(ci,j-1)) / bet(ci)
-                end if
-             end if
-          else if (ctype(ci) /= icol_sunwall .and. ctype(ci) /= icol_shadewall &
-                   .and. ctype(ci) /= icol_roof) then
-             if (j >= jtop(ci)) then
-                if (j == jtop(ci)) then
-                   u(ci,j) = r(ci,j) / bet(ci)
-                else
-                   gam(ci,j) = c(ci,j-1) / bet(ci)
-                   bet(ci) = b(ci,j) - a(ci,j) * gam(ci,j)
-                   u(ci,j) = (r(ci,j) - a(ci,j)*u(ci,j-1)) / bet(ci)
-                end if
+          if (j >= jtop(ci)) then
+             if (j == jtop(ci)) then
+                u(ci,j) = r(ci,j) / bet(ci)
+             else
+                gam(ci,j) = c(ci,j-1) / bet(ci)
+                bet(ci) = b(ci,j) - a(ci,j) * gam(ci,j)
+                u(ci,j) = (r(ci,j) - a(ci,j)*u(ci,j-1)) / bet(ci)
              end if
           end if
        end do
@@ -123,16 +97,8 @@ contains
     do j = ubj-1,lbj,-1
        do fc = 1,numf
           ci = filter(fc)
-          if ((ctype(ci) == icol_sunwall .or. ctype(ci) == icol_shadewall &
-              .or. ctype(ci) == icol_roof) .and. j <= nlevurb-1) then
-             if (j >= jtop(ci)) then
-                u(ci,j) = u(ci,j) - gam(ci,j+1) * u(ci,j+1)
-             end if
-          else if (ctype(ci) /= icol_sunwall .and. ctype(ci) /= icol_shadewall &
-                   .and. ctype(ci) /= icol_roof) then
-             if (j >= jtop(ci)) then
-                u(ci,j) = u(ci,j) - gam(ci,j+1) * u(ci,j+1)
-             end if
+          if (j >= jtop(ci)) then
+             u(ci,j) = u(ci,j) - gam(ci,j+1) * u(ci,j+1)
           end if
        end do
     end do

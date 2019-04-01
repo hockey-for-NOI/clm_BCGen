@@ -229,7 +229,8 @@ contains
     integer , intent(in)  :: lbc, ubc                             ! column index bounds [unitless]
     integer , intent(in)  :: num_nourbanc                         ! number of columns in non-urban filter
     integer , intent(in)  :: filter_nourbanc(ubc-lbc+1)           ! column filter for non-urban points
-    real(r8), intent(in)  :: coszen(lbc:ubc)                      ! cosine of solar zenith angle for next time step (col) [unitless]
+    real(r8), intent(in)  :: coszen(lbc:ubc)                      ! cosine of solar zenith angle for next time step
+                                                                  ! (col) [unitless]
     integer , intent(in)  :: flg_slr_in                           ! flag: =1 for direct-beam incident flux,
                                                                   ! =2 for diffuse incident flux
     real(r8), intent(in)  :: h2osno_liq(lbc:ubc,-nlevsno+1:0)     ! liquid water content (col,lyr) [kg/m2]
@@ -256,7 +257,6 @@ contains
     integer,  pointer :: ltype(:)            ! landunit type (lnd) (debugging only)
     real(r8), pointer :: londeg(:)           ! longitude (degrees) (debugging only)
     real(r8), pointer :: latdeg(:)           ! latitude (degrees) (debugging only)
-    real(r8), pointer :: frac_sno(:)         ! fraction of ground covered by snow (0 to 1)
 !
 ! !OTHER LOCAL VARIABLES:
 !EOP
@@ -374,21 +374,19 @@ contains
     real(r8):: X(-2*nlevsno+1:0)                  ! tri-diag intermediate variable from Toon et al. (2*lyr)
     real(r8):: Y(-2*nlevsno+1:0)                  ! tri-diag intermediate variable from Toon et al. (2*lyr)
 
+
     ! Assign local pointers to derived subtypes components (column-level)
     ! (CLM-specific)
     if (flg_snw_ice == 1) then
        snl            => cps%snl
        h2osno         => cws%h2osno
-       clandunit      =>col%landunit  ! (debug only)
-       cgridcell      =>col%gridcell  ! (debug only)
+       clandunit      => col%landunit  ! (debug only)
+       cgridcell      => col%gridcell  ! (debug only)
        ltype          => lun%itype       ! (debug only)
-       londeg         =>  grc%londeg        ! (debug only)
-       latdeg         =>  grc%latdeg        ! (debug only)
+       londeg         => grc%londeg        ! (debug only)
+       latdeg         => grc%latdeg        ! (debug only)
     endif
 
-    frac_sno           => cps%frac_sno_eff
-    clandunit      =>col%landunit  
-    ltype          => lun%itype      
 
     ! Define constants
     pi = SHR_CONST_PI
@@ -451,8 +449,8 @@ contains
              l_idx     = clandunit(c_idx)
              g_idx     = cgridcell(c_idx)
              sfctype   = ltype(l_idx)
-             lat_coord = grc%latdeg(g_idx)
-             lon_coord = grc%londeg(g_idx)
+             lat_coord = latdeg(g_idx)
+             lon_coord = londeg(g_idx)
 
 
           ! Set variables specific to CSIM
@@ -895,7 +893,7 @@ contains
                 enddo
                 
                 flx_abs_lcl(1,bnd_idx) = F_btm_net
-
+             
                 if (flg_nosnl == 1) then
                    ! If there are no snow layers (but still snow), all absorbed energy must be in top soil layer
                    !flx_abs_lcl(:,bnd_idx) = 0._r8
@@ -907,7 +905,6 @@ contains
                    ! SurfaceRadiation (called in Hydrology1), absorbed energy will be properly distributed.
                    flx_abs_lcl(0,bnd_idx) = F_abs(0)
                    flx_abs_lcl(1,bnd_idx) = F_btm_net
-
                 endif
                 
                 !Underflow check (we've already tripped the error condition above)
@@ -956,10 +953,6 @@ contains
                    write(iulog,*) "SNICAR STATS: dust2(0)= ", mss_cnc_aer_lcl(0,4)
                    write(iulog,*) "SNICAR STATS: dust3(0)= ", mss_cnc_aer_lcl(0,5)
                    write(iulog,*) "SNICAR STATS: dust4(0)= ", mss_cnc_aer_lcl(0,6)
-                   l_idx     = clandunit(c_idx)
-                   write(iulog,*) "column index: ", c_idx
-                   write(iulog,*) "landunit type", ltype(l_idx)
-                   write(iulog,*) "frac_sno: ", frac_sno(c_idx)
                   
                    call endrun()
                 else
@@ -1132,7 +1125,6 @@ contains
     real(r8), pointer :: qflx_snwcp_ice(:)     ! excess precipitation due to snow capping [kg m-2 s-1]
     real(r8), pointer :: qflx_snofrz_lyr(:,:)  ! snow freezing rate (col,lyr) [kg m-2 s-1]
     logical , pointer :: do_capsnow(:)         ! true => do snow capping
-    real(r8), pointer :: frac_sno(:)           ! fraction of ground covered by snow (0 to 1)
  
     !
     ! !OTHER LOCAL VARIABLES:
@@ -1163,8 +1155,8 @@ contains
     real(r8) :: dtime                       ! land model time step [sec]
     real(r8) :: rhos                        ! snow density [kg m-3]
     real(r8) :: h2osno_lyr                  ! liquid + solid H2O in snow layer [kg m-2]
-    real(r8) :: cdz(-nlevsno+1:0)           ! column average layer thickness [m]
-!--------------------------------------------------------------------------!
+
+
     ! Assign local pointers to derived subtypes components (column-level)
     t_soisno           => ces%t_soisno
     snl                => cps%snl
@@ -1182,7 +1174,6 @@ contains
     qflx_snwcp_ice     => pwf_a%qflx_snwcp_ice
     qflx_snofrz_lyr    => cwf%qflx_snofrz_lyr
     do_capsnow         => cps%do_capsnow
-    frac_sno           => cps%frac_sno_eff 
   
 
     ! set timestep and step interval
@@ -1195,8 +1186,6 @@ contains
        snl_btm = 0
        snl_top = snl(c_idx) + 1
 
-       cdz(snl_top:snl_btm)=frac_sno(c_idx)*dz(c_idx,snl_top:snl_btm)
-
        ! loop over snow layers
        do i=snl_top,snl_btm,1
           !
@@ -1207,26 +1196,17 @@ contains
           ! temperature gradient
           if (i == snl_top) then 
              ! top layer
-             t_snotop = t_soisno(c_idx,snl_top)
-             t_snobtm = (t_soisno(c_idx,i+1)*dz(c_idx,i) &
-                  + t_soisno(c_idx,i)*dz(c_idx,i+1)) &
-                  / (dz(c_idx,i)+dz(c_idx,i+1))
+             t_snotop = t_grnd(c_idx)
+             t_snobtm = (t_soisno(c_idx,i+1)*dz(c_idx,i) + t_soisno(c_idx,i)*dz(c_idx,i+1)) / (dz(c_idx,i)+dz(c_idx,i+1))
           else
-             t_snotop = (t_soisno(c_idx,i-1)*dz(c_idx,i) &
-                  + t_soisno(c_idx,i)*dz(c_idx,i-1)) &
-                  / (dz(c_idx,i)+dz(c_idx,i-1))
-             t_snobtm = (t_soisno(c_idx,i+1)*dz(c_idx,i) &
-                  + t_soisno(c_idx,i)*dz(c_idx,i+1)) &
-                  / (dz(c_idx,i)+dz(c_idx,i+1))
+             t_snotop = (t_soisno(c_idx,i-1)*dz(c_idx,i) + t_soisno(c_idx,i)*dz(c_idx,i-1)) / (dz(c_idx,i)+dz(c_idx,i-1))
+             t_snobtm = (t_soisno(c_idx,i+1)*dz(c_idx,i) + t_soisno(c_idx,i)*dz(c_idx,i+1)) / (dz(c_idx,i)+dz(c_idx,i+1))
           endif
           
-          dTdz(c_idx,i) = abs((t_snotop - t_snobtm) / cdz(i))
+          dTdz(c_idx,i) = abs((t_snotop - t_snobtm) / dz(c_idx,i))
           
           ! snow density
-          rhos = (h2osoi_liq(c_idx,i)+h2osoi_ice(c_idx,i)) / cdz(i)
-
-          ! make sure rhos doesn't drop below 50 (see rhos_idx below)
-          rhos=max(50._r8,rhos)
+          rhos = (h2osoi_liq(c_idx,i)+h2osoi_ice(c_idx,i)) / dz(c_idx,i)
 
           ! best-fit table indecies
           T_idx    = nint((t_soisno(c_idx,i)-223) / 5) + 1
@@ -1326,6 +1306,8 @@ contains
 
           ! mass-weighted mean of fresh snow, old snow, and re-frozen snow effective radius
           snw_rds(c_idx,i) = (snw_rds(c_idx,i)+dr)*frc_oldsnow + snw_rds_min*frc_newsnow + snw_rds_refrz*frc_refrz
+
+             
           !
           !**********  5. CHECK BOUNDARIES   ***********
           !

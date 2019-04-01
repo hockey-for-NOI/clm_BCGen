@@ -106,10 +106,6 @@ contains
              fwet(p) = 0._r8
           end if
           fdry(p) = (1._r8-fwet(p))*elai(p)/(elai(p)+esai(p))
-
-
-
-
        else
           fwet(p) = 0._r8
           fdry(p) = 0._r8

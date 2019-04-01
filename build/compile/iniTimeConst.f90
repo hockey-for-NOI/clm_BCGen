@@ -21,33 +21,23 @@ subroutine iniTimeConst
   use decompMod   , only : get_proc_bounds, get_proc_global
   use decompMod   , only : gsMap_lnd_gdc2glo
   use clm_atmlnd  , only : clm_a2l
-  use clm_varpar  , only : nlevsoi, nlevgrnd, nlevlak, numpft, numrad, nlevurb, mach_eps
-  use clm_varpar  , only : toplev_equalspace, nlev_equalspace, more_vertlayers, nlevsoifl
-  use clm_varcon  , only : istice, istdlak, istwet, isturb, istsoil, istcrop, istice_mec, &
+  use clm_varpar  , only : nlevsoi, nlevgrnd, nlevlak, numpft, numrad, nlevurb
+  use clm_varcon  , only : istice, istdlak, istwet, isturb, istice_mec,  &
                            icol_roof, icol_sunwall, icol_shadewall, icol_road_perv, icol_road_imperv, &
                            zlak, dzlak, zsoi, dzsoi, zisoi, spval, &
-                           albsat, albdry, dzsoi_decomp, secspday
-
-
-
-
-
-
-  use clm_varctl  , only : fsurdat,scmlon,scmlat,single_column
-  use clm_varctl  , only : iulog
-  use clm_varsur  , only : pctspec
+                           albsat, albdry, secspday
+  use clm_varctl  , only : fsurdat,scmlon,scmlat,single_column, iulog, use_cn, use_cndv
   use pftvarcon   , only : noveg, ntree, roota_par, rootb_par,  &
                            smpso, smpsc, fnitr, nbrdlf_dcd_brl_shrub, &
                            z0mr, displar, dleaf, rhol, rhos, taul, taus, xl, &
-                           c3psn, slatop, dsladlai, leafcn, flnr, woody, &
+                           qe25, mp, c3psn, slatop, dsladlai, leafcn, flnr, woody, &
                            lflitcn, frootcn, livewdcn, deadwdcn, froot_leaf, stem_leaf, croot_stem, &
                            flivewd, fcur, lf_flab, lf_fcel, lf_flig, fr_flab, fr_fcel, fr_flig, &
                            leaf_long, evergreen, stress_decid, season_decid, &
-                           pftpar20, pftpar28, pftpar29, pftpar30, pftpar31, &
+                           resist, pftpar20, pftpar28, pftpar29, pftpar30, pftpar31, &
                            allom1s, allom2s, &
                            allom1 , allom2 , allom3  , reinickerp, dwood
-
-  use pftvarcon       , only : fertnitro, graincn, fleafcn, ffrootcn, fstemcn
+  use pftvarcon       , only : graincn
   use clm_time_manager, only : get_step_size
   use abortutils      , only : endrun
   use fileutils       , only : getfil
@@ -55,23 +45,9 @@ subroutine iniTimeConst
   use spmdMod         , only : mpicom, MPI_INTEGER, masterproc
   use clm_varctl      , only : fsnowoptics, fsnowaging
   use SNICARMod       , only : SnowAge_init, SnowOptics_init
-
-
-
   use shr_scam_mod    , only : shr_scam_getCloseLatLon
   use ncdio_pio       
 
-
-
-
-
-
-
-  use clm_varcon      , only : pc, mu
-  use shr_const_mod   , only : shr_const_pi
-  use shr_spfn_mod    , only : shr_spfn_erf
-  use SoilHydrologyMod, only : h2osfcflag
-!
 !
 ! !ARGUMENTS:
   implicit none
@@ -91,19 +67,11 @@ subroutine iniTimeConst
 ! account for organic matter
 ! 18 March 2008: David Lawrence; nlevgrnd changes
 ! 03/28/08 Mark Flanner, read in netcdf files for SNICAR parameters
-! 2010: Edits by Zack Subin & Charlie Koven...
-!F. Li and S. Levis (11/06/12)
-
+!
 ! !LOCAL VARIABLES:
 !
 ! local pointers to implicit in arguments
 !
-  real(r8), pointer :: topo_std(:)        ! gridcell elevation standard deviation
-  real(r8), pointer :: topo_slope(:)      ! gridcell topographic slope
-  real(r8), pointer :: micro_sigma(:)     ! microtopography pdf sigma (m)
-  real(r8), pointer :: h2osfc_thresh(:)   ! level at which h2osfc "percolates"
-  real(r8), pointer :: hksat_min(:,:)     ! mineral hksat
-  real(r8), pointer :: n_melt(:)          ! SCA shape parameter
   integer , pointer :: ivt(:)             !  vegetation type index
   integer , pointer :: pcolumn(:)         ! column index of corresponding pft
   integer , pointer :: pgridcell(:)       ! gridcell index of corresponding pft
@@ -125,6 +93,9 @@ subroutine iniTimeConst
   real(r8), pointer :: rresis(:,:)        !root resistance by layer (0-1)  (nlevgrnd)	
   real(r8), pointer :: dewmx(:)           ! maximum allowed dew [mm]
   real(r8), pointer :: bsw(:,:)           ! Clapp and Hornberger "b" (nlevgrnd)  
+  real(r8), pointer :: bsw2(:,:)          ! Clapp and Hornberger "b" for CN code
+  real(r8), pointer :: psisat(:,:)        ! soil water potential at saturation for CN code (MPa)
+  real(r8), pointer :: vwcsat(:,:)        ! volumetric water content at saturation for CN code (m3/m3)
   real(r8), pointer :: watsat(:,:)        ! volumetric soil water at saturation (porosity) (nlevgrnd) 
   real(r8), pointer :: watfc(:,:)         ! volumetric soil water at field capacity (nlevsoi)
   real(r8), pointer :: watdry(:,:)        ! btran parameter for btran=0
@@ -136,39 +107,15 @@ subroutine iniTimeConst
   real(r8), pointer :: tkdry(:,:)         ! thermal conductivity, dry soil (W/m/Kelvin) (nlevgrnd) 
   real(r8), pointer :: tksatu(:,:)        ! thermal conductivity, saturated soil [W/m-K] (new) (nlevgrnd) 
   real(r8), pointer :: wtfact(:)          ! maximum saturated fraction for a gridcell
-
-
-
-
-
-  real(r8), pointer :: bd(:,:)               ! bulk density of dry soil material [kg/m^3]
-  ! added by Lei Meng
-
-
-
   real(r8), pointer :: smpmin(:)          ! restriction for min of soil potential (mm) (new)
   real(r8), pointer :: hkdepth(:)         ! decay factor (m)
   integer , pointer :: isoicol(:)         ! soil color class
-
-!added by F. Li and S. Levis
-  real(r8), pointer :: gdp_lf(:)          ! global gdp data
-  real(r8), pointer :: peatf_lf(:)        ! global peatf data
-  integer, pointer :: abm_lf(:)          ! global abm data
-
   real(r8), pointer :: gwc_thr(:)         ! threshold soil moisture based on clay content
   real(r8), pointer :: mss_frc_cly_vld(:) ! [frc] Mass fraction clay limited to 0.20
   real(r8), pointer :: efisop(:,:)        ! emission factors for isoprene (ug isoprene m-2 h-1)
   real(r8), pointer :: max_dayl(:)        ! maximum daylength (s)
   real(r8), pointer :: sandfrac(:)
   real(r8), pointer :: clayfrac(:)
-! For lakes
-  real(r8), pointer :: cellsand(:,:)      ! column 3D sand
-  real(r8), pointer :: cellclay(:,:)      ! column 3D clay
-  real(r8), pointer :: cellorg(:,:)       ! column 3D org content
-  real(r8), pointer :: lakedepth(:)       ! variable lake depth
-  real(r8), pointer :: etal(:)            ! extinction coefficient from surface data (1/m)
-  real(r8), pointer :: lakefetch(:)       ! lake fetch from surface data (m)
-!!
 !
 !
 ! !OTHER LOCAL VARIABLES:
@@ -177,15 +124,12 @@ subroutine iniTimeConst
   integer  :: n,j,ib,lev,bottom! indices
   integer  :: g,l,c,p          ! indices
   integer  :: m                ! vegetation type index
+  real(r8) :: bd               ! bulk density of dry soil material [kg/m^3]
   real(r8) :: tkm              ! mineral conductivity
   real(r8) :: xksat            ! maximum hydraulic conductivity of soil [mm/s]
   real(r8) :: scalez = 0.025_r8   ! Soil layer thickness discretization (m)
-  real(r8) :: thick_equal = 0.2
-  real(r8), pointer :: zsoifl(:)   ! original soil midpoint
-  real(r8), pointer :: zisoifl(:)  ! original soil interface depth
-  real(r8), pointer :: dzsoifl(:)  ! original soil thickness
   real(r8) :: clay,sand        ! temporaries
-  real(r8) :: slope,intercept  ! temporary, for rooting distribution
+  real(r8) :: slope,intercept        ! temporary, for rooting distribution
   real(r8) :: temp, max_decl   ! temporary, for calculation of max_dayl
   integer  :: begp, endp       ! per-proc beginning and ending pft indices
   integer  :: begc, endc       ! per-proc beginning and ending column indices
@@ -202,31 +146,21 @@ subroutine iniTimeConst
   real(r8),pointer :: arrayl(:)      ! generic global array
   integer ,pointer :: irrayg(:)      ! generic global array
   integer ,pointer :: soic2d(:)      ! read in - soil color
-
-  ! added by F. Li and S. Levis
-  real(r8),pointer :: gdp(:)         ! global gdp data
-  real(r8),pointer :: peatf(:)       ! global peatf data
-  integer,pointer :: abm(:)         ! global abm data
-
   real(r8),pointer :: sand3d(:,:)    ! read in - soil texture: percent sand
   real(r8),pointer :: clay3d(:,:)    ! read in - soil texture: percent clay
   real(r8),pointer :: organic3d(:,:) ! read in - organic matter: kg/m3
   real(r8),pointer :: gti(:)         ! read in - fmax
-  real(r8),pointer :: lakedepth_in(:) ! read in - lakedepth
-  real(r8),pointer :: etal_in(:)     ! read in - etal
-  real(r8),pointer :: lakefetch_in(:) ! read in - lakefetch
-  real(r8) :: om_frac                 ! organic matter fraction
-  real(r8) :: om_tkm       = 0.25_r8  ! thermal conductivity of organic soil (Farouki, 1986) [W/m/K]
-  real(r8) :: om_csol      = 2.5_r8   ! heat capacity of peat soil *10^6 (J/K m3) (Farouki, 1986)
-  real(r8) :: om_tkd       = 0.05_r8  ! thermal conductivity of dry organic soil (Farouki, 1981)
-  real(r8) :: om_watsat      ! porosity of organic soil
-  real(r8) :: om_hksat       ! saturated hydraulic conductivity of organic soil [mm/s]
-  real(r8) :: om_sucsat      ! saturated suction for organic matter (mm)(Letts, 2000)
-  real(r8) :: om_b           ! Clapp Hornberger paramater for oragnic soil (Letts, 2000)
-  real(r8) :: zsapric      = 0.5_r8   ! depth (m) that organic matter takes on characteristics of sapric peat
-  real(r8) :: organic_max  = 130._r8  ! organic matter (kg/m3) where soil is assumed to act like peat 
+  real(r8) :: om_frac                ! organic matter fraction
+  real(r8) :: om_watsat    = 0.9_r8  ! porosity of organic soil
+  real(r8) :: om_hksat     = 0.1_r8  ! saturated hydraulic conductivity of organic soil [mm/s]
+  real(r8) :: om_tkm       = 0.25_r8 ! thermal conductivity of organic soil (Farouki, 1986) [W/m/K]
+  real(r8) :: om_sucsat    = 10.3_r8 ! saturated suction for organic matter (Letts, 2000)
+  real(r8) :: om_csol      = 2.5_r8  ! heat capacity of peat soil *10^6 (J/K m3) (Farouki, 1986)
+  real(r8) :: om_tkd       = 0.05_r8 ! thermal conductivity of dry organic soil (Farouki, 1981)
+  real(r8) :: om_b         = 2.7_r8  ! Clapp Hornberger paramater for oragnic soil (Letts, 2000)
+  real(r8) :: organic_max  = 130._r8 ! organic matter (kg/m3) where soil is assumed to act like peat 
   real(r8) :: csol_bedrock = 2.0e6_r8 ! vol. heat capacity of granite/sandstone  J/(m3 K)(Shabbir, 2000)
-  real(r8) :: pcalpha      = 0.5_r8   ! percolation threshold
+  real(r8) :: pc           = 0.5_r8   ! percolation threshold
   real(r8) :: pcbeta       = 0.139_r8 ! percolation exponent
   real(r8) :: perc_frac               ! "percolating" fraction of organic soil
   real(r8) :: perc_norm               ! normalize to 1 when 100% organic soil
@@ -236,7 +170,6 @@ subroutine iniTimeConst
   integer  :: ret
 
   integer  :: ier                                ! error status
-  integer  :: dimid                              ! dimension id
   character(len=256) :: locfn                    ! local filename
   character(len= 32) :: subname = 'iniTimeConst' ! subroutine name
   integer :: mxsoil_color                        ! maximum number of soil color classes
@@ -252,35 +185,24 @@ subroutine iniTimeConst
   integer :: closelatidx,closelonidx
   real(r8):: closelat,closelon
   integer :: iostat
-  integer :: nzero_slope               ! Number of points to zero out slope
 
-  real(r8),pointer :: std(:)           ! read in - topo_std
-  real(r8),pointer :: tslope(:)        ! read in - topo_slope
-  real(r8) :: maxslope, slopemax, minslope, d, fd, dfdd, slope0,slopebeta
 !------------------------------------------------------------------------
 
   if (masterproc) write(iulog,*) 'Attempting to initialize time invariant variables'
 
   call get_proc_bounds(begg, endg, begl, endl, begc, endc, begp, endp)
   call get_proc_global(numg, numl, numc, nump)
- 
-! added by F. Li and S. Levis
-  allocate(gdp(begg:endg))
-  allocate(peatf(begg:endg))
-  allocate(abm(begg:endg))
 
   allocate(soic2d(begg:endg), gti(begg:endg))
-  allocate(lakedepth_in(begg:endg))
-  allocate(etal_in(begg:endg))
-  allocate(lakefetch_in(begg:endg))
-
+  allocate(sand3d(begg:endg,nlevsoi), clay3d(begg:endg,nlevsoi))
+  allocate(organic3d(begg:endg,nlevsoi))
 
   allocate(temp_ef(begg:endg),efisop2d(6,begg:endg))
 
   efisop          => gve%efisop
 
   ! Assign local pointers to derived subtypes components (gridcell-level)
-  lat             =>  grc%lat
+  lat             => grc%lat
      
   ! Assign local pointers to derived subtypes components (landunit-level)
 
@@ -290,19 +212,16 @@ subroutine iniTimeConst
 
   ! Assign local pointers to derived subtypes components (column-level)
 
-  topo_std        => cps%topo_std
-  topo_slope      => cps%topo_slope
-  micro_sigma     => cps%micro_sigma
-  h2osfc_thresh   => cps%h2osfc_thresh
-  hksat_min       => cps%hksat_min
-  n_melt          => cps%n_melt
   ctype           => col%itype
-  clandunit       =>col%landunit
-  cgridcell       =>col%gridcell
+  clandunit       => col%landunit
+  cgridcell       => col%gridcell
   z               => cps%z
   dz              => cps%dz
   zi              => cps%zi
   bsw             => cps%bsw
+  bsw2            => cps%bsw2
+  psisat          => cps%psisat
+  vwcsat          => cps%vwcsat
   watsat          => cps%watsat
   watfc           => cps%watfc
   watdry          => cps%watdry  
@@ -317,48 +236,32 @@ subroutine iniTimeConst
   smpmin          => cps%smpmin
   hkdepth         => cps%hkdepth
   wtfact          => cps%wtfact
-  bd              => cps%bd
   isoicol         => cps%isoicol
-  
-  ! added by F. Li and S. Levis
-  gdp_lf          => cps%gdp_lf
-  peatf_lf        => cps%peatf_lf
-  abm_lf          => cps%abm_lf
-
   gwc_thr         => cps%gwc_thr
   mss_frc_cly_vld => cps%mss_frc_cly_vld
   max_dayl        => cps%max_dayl
-  cellsand        => cps%cellsand
-  cellclay        => cps%cellclay
-  cellorg         => cps%cellorg
-  lakedepth       => cps%lakedepth
-  etal            => cps%etal
-  lakefetch       => cps%lakefetch
 
   ! Assign local pointers to derived subtypes components (pft-level)
 
-  ivt             =>pft%itype
-  pgridcell       =>pft%gridcell
-  pcolumn         =>pft%column
+  ivt             => pft%itype
+  pgridcell       => pft%gridcell
+  pcolumn         => pft%column
   dewmx           => pps%dewmx
   rootfr          => pps%rootfr
   rresis          => pps%rresis
   sandfrac        => pps%sandfrac
   clayfrac        => pps%clayfrac
 
-  if (nlevurb > 0) then
-    allocate(zurb_wall(begl:endl,nlevurb),    &
-             zurb_roof(begl:endl,nlevurb),    &
-             dzurb_wall(begl:endl,nlevurb),   &
-             dzurb_roof(begl:endl,nlevurb),   &
-             ziurb_wall(begl:endl,0:nlevurb), &
-             ziurb_roof(begl:endl,0:nlevurb), &
-             stat=ier)
-    if (ier /= 0) then
-       call endrun( 'iniTimeConst: allocation error for zurb_wall,zurb_roof,dzurb_wall,dzurb_roof,ziurb_wall,ziurb_roof' )
-    end if
+  allocate(zurb_wall(begl:endl,nlevurb),    &
+           zurb_roof(begl:endl,nlevurb),    &
+           dzurb_wall(begl:endl,nlevurb),   &
+           dzurb_roof(begl:endl,nlevurb),   &
+           ziurb_wall(begl:endl,0:nlevurb), &
+           ziurb_roof(begl:endl,0:nlevurb), &
+           stat=ier)
+  if (ier /= 0) then
+     call endrun( 'iniTimeConst: allocation error for zurb_wall,zurb_roof,dzurb_wall,dzurb_roof,ziurb_wall,ziurb_roof' )
   end if
-
 
   ! --------------------------------------------------------------------
   ! Read soil color, sand and clay from surface dataset 
@@ -371,17 +274,6 @@ subroutine iniTimeConst
   call getfil (fsurdat, locfn, 0)
   call ncd_pio_openfile (ncid, locfn, 0)
 
-  call ncd_inqdlen(ncid,dimid,nlevsoifl,name='nlevsoi')
-  if ( .not. more_vertlayers )then
-     if ( nlevsoifl /= nlevsoi )then
-         call endrun( trim(subname)//' ERROR: Number of soil layers on file does NOT match the number being used' )
-     end if
-  else
-     ! read in layers, interpolate to high resolution grid later
-  end if
-  allocate(sand3d(begg:endg,nlevsoifl), clay3d(begg:endg,nlevsoifl))
-  allocate(organic3d(begg:endg,nlevsoifl))
-
   ! Determine number of soil color classes - if number of soil color classes is not
   ! on input dataset set it to 8
 
@@ -392,41 +284,6 @@ subroutine iniTimeConst
               readvar=readvar)
   if ( .not. readvar ) mxsoil_color = 8  
 
-  ! Methane code parameters for finundated
-! def CH4
-
-  ! Read lakedepth
-  call ncd_io(ncid=ncid, varname='LAKEDEPTH', flag='read', data=lakedepth_in, dim1name=grlnd, readvar=readvar)
-  if (.not. readvar) then
-     if (masterproc) write(iulog,*) 'WARNING:: LAKEDEPTH not found on surface data set. All lake columns will have lake depth', &
-                    ' set equal to default value.'
-     lakedepth_in(:) = spval
-  end if
-
-  ! Read lake eta
-  call ncd_io(ncid=ncid, varname='ETALAKE', flag='read', data=etal_in, dim1name=grlnd, readvar=readvar)
-  if (.not. readvar) then
-     if (masterproc) write(iulog,*) 'WARNING:: ETALAKE not found on surface data set. All lake columns will have eta', &
-                    ' set equal to default value as a function of depth.'
-     etal_in(:) = -1._r8
-  end if
-
-  ! Read lake fetch
-  call ncd_io(ncid=ncid, varname='LAKEFETCH', flag='read', data=lakefetch_in, dim1name=grlnd, readvar=readvar)
-  if (.not. readvar) then
-     if (masterproc) write(iulog,*) 'WARNING:: LAKEFETCH not found on surface data set. All lake columns will have fetch', &
-                    ' set equal to default value as a function of depth.'
-     lakefetch_in(:) = -1._r8
-  end if
-
-  ! Read in topographic index and slope
-  allocate(tslope(begg:endg))
-  allocate(std(begg:endg))
-  call ncd_io(ncid=ncid, varname='SLOPE', flag='read', data=tslope, dim1name=grlnd, readvar=readvar)
-  if (.not. readvar) call endrun( trim(subname)//' ERROR: TOPOGRAPHIC SLOPE NOT on surfdata file') 
-  call ncd_io(ncid=ncid, varname='STD_ELEV', flag='read', data=std, dim1name=grlnd, readvar=readvar)
-  if (.not. readvar) call endrun( trim(subname)//' ERROR: TOPOGRAPHIC STDdev (STD_ELEV) NOT on surfdata file') 
-
   ! Read fmax
 
   call ncd_io(ncid=ncid, varname='FMAX', flag='read', data=gti, dim1name=grlnd, readvar=readvar)
@@ -436,21 +293,6 @@ subroutine iniTimeConst
 
   call ncd_io(ncid=ncid, varname='SOIL_COLOR', flag='read', data=soic2d, dim1name=grlnd, readvar=readvar)
   if (.not. readvar) call endrun( trim(subname)//' ERROR: SOIL_COLOR NOT on surfdata file' ) 
-
-  ! Read in GDP data added by F. Li and S. Levis
-
-  call ncd_io(ncid=ncid, varname='gdp', flag='read', data=gdp, dim1name=grlnd, readvar=readvar)
-  if (.not. readvar) call endrun( trim(subname)//' ERROR: gdp NOT on surfdata file' ) 
-
-  ! Read in peatf data added by F. Li and S. Levis
-
-  call ncd_io(ncid=ncid, varname='peatf', flag='read', data=peatf, dim1name=grlnd, readvar=readvar)
-  if (.not. readvar) call endrun( trim(subname)//' ERROR: peatf NOT on surfdata file' ) 
-
-  ! Read in ABM data added by F. Li and S. Levis
-
-  call ncd_io(ncid=ncid, varname='abm', flag='read', data=abm, dim1name=grlnd, readvar=readvar)
-  if (.not. readvar) call endrun( trim(subname)//' ERROR: abm NOT on surfdata file' ) 
 
   ! Read in emission factors
 
@@ -521,16 +363,6 @@ subroutine iniTimeConst
   
   do p = begp,endp
      g = pgridcell(p)
-     if ( sand3d(g,1)+clay3d(g,1) == 0.0_r8 )then
-        if ( any( sand3d(g,:)+clay3d(g,:) /= 0.0_r8 ) )then
-           call endrun( 'found depth points that do NOT sum to zero when surface does' )
-        end if
-        sand3d(g,:) = 1.0_r8
-        clay3d(g,:) = 1.0_r8
-     end if
-     if ( any( sand3d(g,:)+clay3d(g,:) == 0.0_r8 ) )then
-        call endrun( 'after setting, found points sum to zero' )
-     end if
      sandfrac(p) = sand3d(g,1)/100.0_r8
      clayfrac(p) = clay3d(g,1)/100.0_r8
   end do
@@ -540,7 +372,6 @@ subroutine iniTimeConst
   ! --------------------------------------------------------------------
 
   call organicrd(organic3d)
-
 
   ! --------------------------------------------------------------------
   ! Initialize time constant arrays of ecophysiological constants and
@@ -563,6 +394,8 @@ subroutine iniTimeConst
          pftcon%taul(m,ib) = taul(m,ib)
          pftcon%taus(m,ib) = taus(m,ib)
       end do
+      pftcon%qe25(m) = qe25(m)
+      pftcon%mp(m) = mp(m)
       pftcon%c3psn(m) = c3psn(m)
       pftcon%slatop(m) = slatop(m)
       pftcon%dsladlai(m) = dsladlai(m)
@@ -592,43 +425,64 @@ subroutine iniTimeConst
       pftcon%evergreen(m) = evergreen(m)
       pftcon%stress_decid(m) = stress_decid(m)
       pftcon%season_decid(m) = season_decid(m)
+      pftcon%resist(m) = resist(m)
       pftcon%dwood(m) = dwood
-      pftcon%fertnitro(m) = fertnitro(m)
-      pftcon%fleafcn(m)   = fleafcn(m)
-      pftcon%ffrootcn(m)  = ffrootcn(m)
-      pftcon%fstemcn(m)   = fstemcn(m)
    end do
 
+   if (use_cndv) then
+      do m = 0,numpft
+         dgv_pftcon%crownarea_max(m) = pftpar20(m)
+         dgv_pftcon%tcmin(m) = pftpar28(m)
+         dgv_pftcon%tcmax(m) = pftpar29(m)
+         dgv_pftcon%gddmin(m) = pftpar30(m)
+         dgv_pftcon%twmax(m) = pftpar31(m)
+         dgv_pftcon%reinickerp(m) = reinickerp
+         dgv_pftcon%allom1(m) = allom1
+         dgv_pftcon%allom2(m) = allom2
+         dgv_pftcon%allom3(m) = allom3
+         ! modification for shrubs by X.D.Z
+         if (m > ntree .and. m <= nbrdlf_dcd_brl_shrub ) then 
+            dgv_pftcon%allom1(m) = allom1s
+            dgv_pftcon%allom2(m) = allom2s
+         end if
+      end do
+   end if
 
    ! --------------------------------------------------------------------
    ! Define layer structure for soil, lakes, urban walls and roof 
    ! Vertical profile of snow is not initialized here 
    ! --------------------------------------------------------------------
 
+   ! Lake layers (assumed same for all lake patches)
+
+   dzlak(1) = 0.1_r8
+   dzlak(2) = 1._r8
+   dzlak(3) = 2._r8
+   dzlak(4) = 3._r8
+   dzlak(5) = 4._r8
+   dzlak(6) = 5._r8
+   dzlak(7) = 7._r8
+   dzlak(8) = 7._r8
+   dzlak(9) = 10.45_r8
+   dzlak(10)= 10.45_r8
+
+   zlak(1) =  0.05_r8
+   zlak(2) =  0.6_r8
+   zlak(3) =  2.1_r8
+   zlak(4) =  4.6_r8
+   zlak(5) =  8.1_r8
+   zlak(6) = 12.6_r8
+   zlak(7) = 18.6_r8
+   zlak(8) = 25.6_r8
+   zlak(9) = 34.325_r8
+   zlak(10)= 44.775_r8
+
    ! Soil layers and interfaces (assumed same for all non-lake patches)
    ! "0" refers to soil surface and "nlevsoi" refers to the bottom of model soil
 
-   if ( more_vertlayers )then
-      ! replace standard exponential grid with a grid that starts out exponential, then has several evenly spaced layers, then finishes off exponential. 
-      ! this allows the upper soil to behave as standard, but then continues with higher resolution to a deeper depth, so that, for example, permafrost
-      ! dynamics are not lost due to an inability to resolve temperature, moisture, and biogeochemical dynamics at the base of the active layer
-      do j = 1, toplev_equalspace
-         zsoi(j) = scalez*(exp(0.5_r8*(j-0.5_r8))-1._r8)    !node depths
-      enddo
-
-      do j = toplev_equalspace+1,toplev_equalspace + nlev_equalspace
-         zsoi(j) = zsoi(j-1) + thick_equal
-      enddo
-
-      do j = toplev_equalspace + nlev_equalspace +1, nlevgrnd
-         zsoi(j) = scalez*(exp(0.5_r8*((j - nlev_equalspace)-0.5_r8))-1._r8) + nlev_equalspace * thick_equal
-      enddo
-    else
-
-      do j = 1, nlevgrnd
-         zsoi(j) = scalez*(exp(0.5_r8*(j-0.5_r8))-1._r8)    !node depths
-      enddo
-    end if
+   do j = 1, nlevgrnd
+      zsoi(j) = scalez*(exp(0.5_r8*(j-0.5_r8))-1._r8)    !node depths
+   enddo
 
    dzsoi(1) = 0.5_r8*(zsoi(1)+zsoi(2))             !thickness b/n two interfaces
    do j = 2,nlevgrnd-1
@@ -642,38 +496,12 @@ subroutine iniTimeConst
    enddo
    zisoi(nlevgrnd) = zsoi(nlevgrnd) + 0.5_r8*dzsoi(nlevgrnd)
 
-   if (masterproc) write(iulog, *) 'zsoi', zsoi(:) 
-   if (masterproc) write(iulog, *) 'zisoi: ', zisoi(:)
-   if (masterproc) write(iulog, *) 'dzsoi: ', dzsoi(:)
-
-
-! define a vertical grid spacing such that it is the normal dzsoi if nlevdecomp =nlevgrnd, or else 1 meter
-   dzsoi_decomp(1) = 1.
-   if (masterproc) write(iulog, *) 'dzsoi_decomp', dzsoi_decomp(:) 
-
-   ! get original soil depths to be used in interpolation of sand and clay
-   allocate(zsoifl(1:nlevsoifl),zisoifl(0:nlevsoifl),dzsoifl(1:nlevsoifl))
-   do j = 1, nlevsoifl
-      zsoifl(j) = 0.025*(exp(0.5_r8*(j-0.5_r8))-1._r8)    !node depths
-   enddo
-
-   dzsoifl(1) = 0.5_r8*(zsoifl(1)+zsoifl(2))             !thickness b/n two interfaces
-   do j = 2,nlevsoifl-1
-      dzsoifl(j)= 0.5_r8*(zsoifl(j+1)-zsoifl(j-1))
-   enddo
-   dzsoifl(nlevsoifl) = zsoifl(nlevsoifl)-zsoifl(nlevsoifl-1)
-
-   zisoifl(0) = 0._r8
-   do j = 1, nlevsoifl-1
-      zisoifl(j) = 0.5_r8*(zsoifl(j)+zsoifl(j+1))         !interface depths
-   enddo
-   zisoifl(nlevsoifl) = zsoifl(nlevsoifl) + 0.5_r8*dzsoifl(nlevsoifl)
-
    ! Column level initialization for urban wall and roof layers and interfaces
    do l = begl, endl
 
    ! "0" refers to urban wall/roof surface and "nlevsoi" refers to urban wall/roof bottom
     if (ltype(l)==isturb) then
+   
       do j = 1, nlevurb
         zurb_wall(l,j) = (j-0.5)*(thick_wall(l)/float(nlevurb))  !node depths
       end do
@@ -681,17 +509,17 @@ subroutine iniTimeConst
         zurb_roof(l,j) = (j-0.5)*(thick_roof(l)/float(nlevurb))  !node depths
       end do
 
-      dzurb_roof(l,1) = 0.5*(zurb_roof(l,1)+zurb_roof(l,2))    !thickness b/n two interfaces
-      do j = 2,nlevurb-1
-        dzurb_roof(l,j)= 0.5*(zurb_roof(l,j+1)-zurb_roof(l,j-1)) 
-      enddo
-      dzurb_roof(l,nlevurb) = zurb_roof(l,nlevurb)-zurb_roof(l,nlevurb-1)
-
       dzurb_wall(l,1) = 0.5*(zurb_wall(l,1)+zurb_wall(l,2))    !thickness b/n two interfaces
       do j = 2,nlevurb-1
         dzurb_wall(l,j)= 0.5*(zurb_wall(l,j+1)-zurb_wall(l,j-1)) 
       enddo
       dzurb_wall(l,nlevurb) = zurb_wall(l,nlevurb)-zurb_wall(l,nlevurb-1)
+
+      dzurb_roof(l,1) = 0.5*(zurb_roof(l,1)+zurb_roof(l,2))    !thickness b/n two interfaces
+      do j = 2,nlevurb-1
+        dzurb_roof(l,j)= 0.5*(zurb_roof(l,j+1)-zurb_roof(l,j-1)) 
+      enddo
+      dzurb_roof(l,nlevurb) = zurb_roof(l,nlevurb)-zurb_roof(l,nlevurb-1)
 
       ziurb_wall(l,0) = 0.
       do j = 1, nlevurb-1
@@ -722,7 +550,6 @@ subroutine iniTimeConst
    ! Initialize soil color, thermal and hydraulic properties
    ! --------------------------------------------------------------------
 
-   nzero_slope = 0
    ! Column level initialization
    do c = begc, endc
 
@@ -748,77 +575,6 @@ subroutine iniTimeConst
       ! Maximum saturated fraction
       wtfact(c) = gti(g)
 
-       ! GDP data added by F. Li and S. Levis
-      gdp_lf(c) = gdp(g)
-
-      ! peatf data added by F. Li and S. Levis
-      peatf_lf(c) = peatf(g)
-
-       ! abm data added by F. Li and S. Levis
-      abm_lf(c) = abm(g)
-
-
-      ! Parameters for calculation of finundated
-
-      ! Lake data
-      lakedepth(c) = lakedepth_in(g)
-      etal(c) = etal_in(g)
-      lakefetch(c) = lakefetch_in(g)
-
-      ! Topographic variables
-      topo_std(c) = std(g)
-      if ( pctspec(g) >= 100.0_r8-mach_eps )then
-         ! Zero out slope over ALL special land-units
-         topo_slope(c) = 0.0_r8
-         nzero_slope   = nzero_slope + 1
-      else
-         ! check for near zero slopes, set minimum value
-         topo_slope(c) = max(tslope(g),0.2_r8)
-       end if
-
-      ! SCA shape function defined
-      if (ltype(l)==istice_mec) then
-         ! ice_mec columns already account for subgrid topographic variability through
-         ! their use of multiple elevation classes; thus, to avoid double-accounting for
-         ! topographic variability in these columns, we ignore topo_std and use a value
-         ! of n_melt that assumes little topographic variability within the column
-         n_melt(c) = 10._r8
-      else
-         n_melt(c) = 200.0/max(10.0_r8,topo_std(c))
-      end if
-
-      ! microtopographic parameter, units are meters
-      minslope=0.05
-      slopemax=0.4_r8
-      maxslope=(slopemax - minslope)/(slopemax)
-
-      ! try smooth function of slope
-      slopebeta=3._r8
-      slopemax=0.4_r8
-      slope0=slopemax**(-1._r8/slopebeta)
-      micro_sigma(c) = (topo_slope(c) + slope0)**(-slopebeta)
-
-      ! determine h2osfc threshold ("fill & spill" concept)
-      if (micro_sigma(c) > 1.e-6_r8) then
-         d=0.0
-         do p=1,4
-            fd = 0.5*(1.0_r8+shr_spfn_erf(d/(micro_sigma(c)*sqrt(2.0)))) - pc
-            dfdd = exp(-d**2/(2.0*micro_sigma(c)**2))/(micro_sigma(c)*sqrt(2.0*shr_const_pi))
-            d = d - fd/dfdd
-         enddo
-         h2osfc_thresh(c) = 0.5*d*(1.0_r8+shr_spfn_erf(d/(micro_sigma(c)*sqrt(2.0)))) &
-              +micro_sigma(c)/sqrt(2.0*shr_const_pi)*exp(-d**2/(2.0*micro_sigma(c)**2))         
-         h2osfc_thresh(c) = 1.e3_r8 * h2osfc_thresh(c) !convert to mm from meters
-      else
-         h2osfc_thresh(c) = 0._r8
-      endif
-
-      if(h2osfcflag == 0) then 
-         slopemax=0.05_r8
-         micro_sigma(c) = slopemax
-         h2osfc_thresh(c) = 0._r8    ! set to zero for no h2osfc (w/frac_infclust =large)
-      endif
-
       ! Soil color
       isoicol(c) = soic2d(g)
 
@@ -828,12 +584,12 @@ subroutine iniTimeConst
         ! value because thermal conductivity and heat capacity for urban 
         ! roof, sunwall and shadewall are prescribed in SoilThermProp.F90 in 
         ! SoilTemperatureMod.F90
-      ! Lakes will be set in initSLake. This could also be done here to facilitate changing soil properties everywhere,
-      ! but there may also be reasons to keep lakes separate (e.g. if lake-specific soil data became available,
-      ! if thermokarst lakes were treated, etc.)
-      if (ltype(l)==istwet .or. ltype(l)==istice .or. ltype(l)==istice_mec) then
+      if (ltype(l)==istdlak .or. ltype(l)==istwet .or. ltype(l)==istice .or. ltype(l)==istice_mec) then
          do lev = 1,nlevgrnd
             bsw(c,lev)    = spval
+            bsw2(c,lev)   = spval
+            psisat(c,lev) = spval
+            vwcsat(c,lev) = spval
             watsat(c,lev) = spval
             watfc(c,lev)  = spval
             hksat(c,lev)  = spval
@@ -848,19 +604,16 @@ subroutine iniTimeConst
             endif
             watdry(c,lev) = spval 
             watopt(c,lev) = spval 
-            bd(c,lev) = spval 
-            if (lev <= nlevsoi) then
-               cellsand(c,lev) = spval
-               cellclay(c,lev) = spval
-               cellorg(c,lev)  = spval
-            end if
          end do
       else if (ltype(l)==isturb .and. (ctype(c) /= icol_road_perv) .and. (ctype(c) /= icol_road_imperv) )then
          ! Urban Roof, sunwall, shadewall properties set to special value
-         do lev = 1,nlevgrnd
+         do lev = 1,nlevurb
             watsat(c,lev) = spval
             watfc(c,lev)  = spval
             bsw(c,lev)    = spval
+            bsw2(c,lev)   = spval
+            psisat(c,lev) = spval
+            vwcsat(c,lev) = spval
             hksat(c,lev)  = spval
             sucsat(c,lev) = spval
             tkmg(c,lev)   = spval
@@ -869,86 +622,42 @@ subroutine iniTimeConst
             csol(c,lev)   = spval
             watdry(c,lev) = spval 
             watopt(c,lev) = spval 
-            bd(c,lev) = spval 
-            if (lev <= nlevsoi) then
-               cellsand(c,lev) = spval
-               cellclay(c,lev) = spval
-               cellorg(c,lev)  = spval
-            end if
          end do
-      !else if (ltype(l) /= istdlak) then  ! soil columns of both urban and non-urban types
-      else
+      else  ! soil columns of both urban and non-urban types
          do lev = 1,nlevgrnd
-            ! duplicate clay and sand values from last soil layer
-            if ( more_vertlayers )then
-               if (lev .eq. 1) then
-                  clay    = clay3d(g,1)
-                  sand    = sand3d(g,1)
-                  om_frac = organic3d(g,1)/organic_max 
-               else if (lev .le. nlevsoi) then
-                  do j = 1,nlevsoifl-1
-                     if (zisoi(lev) .ge. zisoifl(j) .AND. zisoi(lev) .lt. zisoifl(j+1)) then
-                        clay    = clay3d(g,j+1)
-                        sand    = sand3d(g,j+1)
-                        om_frac = organic3d(g,j+1)/organic_max    
-                     endif
-                  end do
-               else
-                  clay    = clay3d(g,nlevsoifl)
-                  sand    = sand3d(g,nlevsoifl)
-                  om_frac = 0._r8
-               endif
+            ! duplicate clay and sand values from 10th soil layer
+            if (lev .le. nlevsoi) then
+               clay    = clay3d(g,lev)
+               sand    = sand3d(g,lev)
+               om_frac = (organic3d(g,lev)/organic_max)**2._r8
             else
-               ! duplicate clay and sand values from 10th soil layer
-               if (lev .le. nlevsoi) then
-                  clay    = clay3d(g,lev)
-                  sand    = sand3d(g,lev)
-                  om_frac = (organic3d(g,lev)/organic_max)**2._r8
-               else
-                  clay    = clay3d(g,nlevsoi)
-                  sand    = sand3d(g,nlevsoi)
-                  om_frac = 0._r8
-               endif
-            end if
-          if (ltype(l) == istdlak) then
-             if (lev <= nlevsoi) then
-                cellsand(c,lev) = sand
-                cellclay(c,lev) = clay
-                cellorg(c,lev)  = om_frac*organic_max
-             end if
-          else if (ltype(l) /= istdlak) then  ! soil columns of both urban and non-urban types
+               clay    = clay3d(g,nlevsoi)
+               sand    = sand3d(g,nlevsoi)
+               om_frac = 0._r8
+            endif
             ! No organic matter for urban
             if (ltype(l)==isturb) then
               om_frac = 0._r8
             end if
-            if (lev <= nlevsoi) then
-               cellsand(c,lev) = sand
-               cellclay(c,lev) = clay
-               cellorg(c,lev)  = om_frac*organic_max
-            end if
-
             ! Note that the following properties are overwritten for urban impervious road 
             ! layers that are not soil in SoilThermProp.F90 within SoilTemperatureMod.F90
             watsat(c,lev) = 0.489_r8 - 0.00126_r8*sand
             bsw(c,lev)    = 2.91 + 0.159*clay
             sucsat(c,lev) = 10._r8 * ( 10._r8**(1.88_r8-0.0131_r8*sand) )
-            om_watsat     = max(0.93_r8 - 0.1_r8*(zsoi(lev)/zsapric), 0.83_r8)
-            om_b          = min(2.7_r8 + 9.3_r8*(zsoi(lev)/zsapric), 12.0_r8)
-            om_sucsat     = min(10.3_r8 - 0.2_r8*(zsoi(lev)/zsapric), 10.1_r8)
-            om_hksat      = max(0.28_r8 - 0.2799_r8*(zsoi(lev)/zsapric), 0.0001_r8)
-
-            bd(c,lev)     = (1._r8-watsat(c,lev))*2.7e3_r8 
+            bd            = (1._r8-watsat(c,lev))*2.7e3_r8 
             watsat(c,lev) = (1._r8 - om_frac)*watsat(c,lev) + om_watsat*om_frac
             tkm           = (1._r8-om_frac)*(8.80_r8*sand+2.92_r8*clay)/(sand+clay)+om_tkm*om_frac ! W/(m K)
             bsw(c,lev)    = (1._r8-om_frac)*(2.91_r8 + 0.159_r8*clay) + om_frac*om_b   
+            bsw2(c,lev)   = -(3.10_r8 + 0.157_r8*clay - 0.003_r8*sand)
+            psisat(c,lev) = -(exp((1.54_r8 - 0.0095_r8*sand + 0.0063_r8*(100.0_r8-sand-clay))*log(10.0_r8))*9.8e-5_r8)
+            vwcsat(c,lev) = (50.5_r8 - 0.142_r8*sand - 0.037_r8*clay)/100.0_r8
             sucsat(c,lev) = (1._r8-om_frac)*sucsat(c,lev) + om_sucsat*om_frac  
             xksat         = 0.0070556 *( 10.**(-0.884+0.0153*sand) ) ! mm/s
-            hksat_min(c,lev)=xksat
 
             ! perc_frac is zero unless perf_frac greater than percolation threshold
-            if (om_frac > pcalpha) then
-               perc_norm=(1._r8 - pcalpha)**(-pcbeta)
-               perc_frac=perc_norm*(om_frac - pcalpha)**pcbeta
+            if (om_frac > pc) then
+               perc_norm=(1._r8 - pc)**(-pcbeta)
+               perc_frac=perc_norm*(om_frac - pc)**pcbeta
             else
                perc_frac=0._r8
             endif
@@ -965,7 +674,7 @@ subroutine iniTimeConst
 
             tkmg(c,lev)   = tkm ** (1._r8- watsat(c,lev))           
             tksatu(c,lev) = tkmg(c,lev)*0.57_r8**watsat(c,lev)
-            tkdry(c,lev)  = ((0.135_r8*bd(c,lev) + 64.7_r8) / (2.7e3_r8 - 0.947_r8*bd(c,lev)))*(1._r8-om_frac) + &
+            tkdry(c,lev)  = ((0.135_r8*bd + 64.7_r8) / (2.7e3_r8 - 0.947_r8*bd))*(1._r8-om_frac) + &
                             om_tkd*om_frac  
             csol(c,lev)   = ((1._r8-om_frac)*(2.128_r8*sand+2.385_r8*clay) / (sand+clay) +   &
                            om_csol*om_frac)*1.e6_r8  ! J/(m3 K)  
@@ -978,7 +687,6 @@ subroutine iniTimeConst
             ! water content at field capacity, defined as hk = 0.1 mm/day
             ! used eqn (7.70) in CLM3 technote with k = 0.1 (mm/day) / secspday (day/sec)
             watfc(c,lev) = watsat(c,lev) * (0.1_r8 / (hksat(c,lev)*secspday))**(1._r8/(2._r8*bsw(c,lev)+3._r8))
-          end if
          end do
          !
          ! Urban pervious and impervious road
@@ -1001,33 +709,25 @@ subroutine iniTimeConst
          end if
       endif
 
-      ! Define non-lake levels, layers and interfaces
-      ! Lakes will be set in initSLake
-      if (ltype(l) == isturb) then
+      ! Define lake or non-lake levels, layers and interfaces
+      if (ltype(l) == istdlak) then
+         z(c,1:nlevlak)  = zlak(1:nlevlak)
+         dz(c,1:nlevlak) = dzlak(1:nlevlak)
+      else if (ltype(l) == isturb) then
          if (ctype(c)==icol_sunwall .or. ctype(c)==icol_shadewall) then
             z(c,1:nlevurb)  = zurb_wall(l,1:nlevurb)
             zi(c,0:nlevurb) = ziurb_wall(l,0:nlevurb)
             dz(c,1:nlevurb) = dzurb_wall(l,1:nlevurb)
-            if (nlevurb < nlevgrnd) then
-               z(c,nlevurb+1:nlevgrnd)  = spval
-               zi(c,nlevurb+1:nlevgrnd) = spval
-               dz(c,nlevurb+1:nlevgrnd) = spval
-            end if
          else if (ctype(c)==icol_roof) then
             z(c,1:nlevurb)  = zurb_roof(l,1:nlevurb)
             zi(c,0:nlevurb) = ziurb_roof(l,0:nlevurb)
             dz(c,1:nlevurb) = dzurb_roof(l,1:nlevurb)
-            if (nlevurb < nlevgrnd) then
-               z(c,nlevurb+1:nlevgrnd)  = spval
-               zi(c,nlevurb+1:nlevgrnd) = spval
-               dz(c,nlevurb+1:nlevgrnd) = spval
-            end if
          else
-            z(c,1:nlevgrnd)  = zsoi(1:nlevgrnd)
-            zi(c,0:nlevgrnd) = zisoi(0:nlevgrnd)
-            dz(c,1:nlevgrnd) = dzsoi(1:nlevgrnd)
+            z(c,1:nlevurb)  = zsoi(1:nlevurb)
+            zi(c,0:nlevurb) = zisoi(0:nlevurb)
+            dz(c,1:nlevurb) = dzsoi(1:nlevurb)
          end if
-      else if (ltype(l) /= istdlak) then
+      else
          z(c,1:nlevgrnd)  = zsoi(1:nlevgrnd)
          zi(c,0:nlevgrnd) = zisoi(0:nlevgrnd)
          dz(c,1:nlevgrnd) = dzsoi(1:nlevgrnd)
@@ -1039,11 +739,6 @@ subroutine iniTimeConst
       mss_frc_cly_vld(c) = min(clay*0.01_r8, 0.20_r8)
 
    end do
-
-   if ( nzero_slope > 0 )then
-      write(iulog,'(A,I6,A)') "Set", nzero_slope, &
-                             " 100% special land-units points to zero slope"
-   end if
 
    ! pft level initialization
    do p = begp, endp
@@ -1072,7 +767,7 @@ subroutine iniTimeConst
                                 + exp(-rootb_par(ivt(p)) * zi(c,nlevsoi-1)) )
          rootfr(p,nlevsoi+1:nlevgrnd) =  0.0_r8
 
-!#if (defined CN)
+!if (use_cn) then
 !        ! replacing the exponential rooting distribution
 !        ! with a linear decrease, going to zero at the bottom of the lowest
 !        ! soil layer for woody pfts, but going to zero at the bottom of
@@ -1103,7 +798,7 @@ subroutine iniTimeConst
 !              end do
 !           end if
 !        end if
-!#endif
+! endif
       else
          rootfr(p,1:nlevsoi) = 0._r8
       endif
@@ -1115,18 +810,15 @@ subroutine iniTimeConst
 
    end do ! end pft level initialization
    
-   deallocate(gdp,peatf,abm) ! F. Li and S. Levis
-   deallocate(soic2d,sand3d,clay3d,gti,organic3d)
-   deallocate(zisoifl,zsoifl,dzsoifl)
-   deallocate(temp_ef,efisop2d)
-   deallocate(lakedepth_in)
-   deallocate(etal_in)
-   deallocate(lakefetch_in)
-   if (nlevurb > 0) then
-     deallocate(zurb_wall, zurb_roof, dzurb_wall, dzurb_roof, ziurb_wall, ziurb_roof)
+   if (use_cn) then
+      ! initialize the CN variables for special landunits, including lake points
+      call CNiniSpecial()
    end if
 
-   deallocate(tslope)
+   deallocate(soic2d,sand3d,clay3d,gti,organic3d)
+   deallocate(temp_ef,efisop2d)
+   deallocate(zurb_wall, zurb_roof, dzurb_wall, dzurb_roof, ziurb_wall, ziurb_roof)
+
 
    ! Initialize SNICAR optical and aging parameters:
    call SnowOptics_init( )

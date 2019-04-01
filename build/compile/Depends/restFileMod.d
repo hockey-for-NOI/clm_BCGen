@@ -7,11 +7,13 @@
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_time_manager.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/subgridRestMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/BiogeophysRestMod.o
+/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/CNrestMod.o
+/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/CropRestMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/accumulMod.o
-/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/SLakeRestMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/histFileMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/BiogeophysRestMod.o
-/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/SLakeRestMod.o
+/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/CNrestMod.o
+/home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/CropRestMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/accumulMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/histFileMod.o
 /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/restFileMod.o: /home/hq/share/BCGen_case/BCGen_inst/models/lnd/clm/build/compile/clm_varctl.o

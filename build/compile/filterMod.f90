@@ -15,7 +15,7 @@ module filterMod
 ! !USES:
   use shr_kind_mod, only: r8 => shr_kind_r8
   use abortutils, only : endrun
-  use clm_varctl, only : iulog
+  use clm_varctl, only : iulog, use_cndv
 !
 ! !PUBLIC TYPES:
   implicit none
@@ -24,9 +24,8 @@ module filterMod
   private
 
   type clumpfilter
-
-
-
+     integer, pointer :: natvegp(:)      ! CNDV nat-vegetated (present) filter (pfts)
+     integer :: num_natvegp              ! number of pfts in nat-vegetated filter
 
      integer, pointer :: pcropp(:)       ! prognostic crop filter (pfts)
      integer :: num_pcropp               ! number of pfts in prognostic crop filter
@@ -139,7 +138,7 @@ contains
 
     ! Loop over clumps on this processor
 
-!$OMP PARALLEL DO PRIVATE (nc,begg,endg,begl,endl,begc,endc,begp,endp)
+    !$OMP PARALLEL DO PRIVATE (nc,begg,endg,begl,endl,begc,endc,begp,endp)
     do nc = 1, nclumps
        call get_clump_bounds(nc, begg, endg, begl, endl, begc, endc, begp, endp)
 
@@ -156,9 +155,9 @@ contains
        allocate(filter(nc)%snowc(endc-begc+1))
        allocate(filter(nc)%nosnowc(endc-begc+1))
 
-
-
-
+       if (use_cndv) then
+          allocate(filter(nc)%natvegp(endp-begp+1))
+       end if
 
        allocate(filter(nc)%hydrologyc(endc-begc+1))
 
@@ -174,7 +173,7 @@ contains
        allocate(filter(nc)%pcropp(endp-begp+1))
        allocate(filter(nc)%soilnopcropp(endp-begp+1))
     end do
-!$OMP END PARALLEL DO
+    !$OMP END PARALLEL DO
 
   end subroutine allocFilters
 
@@ -193,7 +192,7 @@ contains
     use clmtype
     use decompMod , only : get_clump_bounds
     use pftvarcon , only : npcropmin
-    use clm_varcon, only : istsoil, isturb, icol_road_perv
+    use clm_varcon, only : istsoil, isturb, icol_road_perv, istice_mec
     use clm_varcon, only : istcrop
 !
 ! !ARGUMENTS:
@@ -231,7 +230,7 @@ contains
     fl = 0
     fnl = 0
     do c = begc,endc
-       l =col%landunit(c)
+       l = col%landunit(c)
        if (lun%lakpoi(l)) then
           fl = fl + 1
           filter(nc)%lakec(fl) = c
@@ -244,14 +243,18 @@ contains
     filter(nc)%num_nolakec = fnl
 
     ! Create lake and non-lake filters at pft-level 
-    ! Filter will only be active if pft is active
+    ! Filter will only be active if weight of pft wrt gcell is nonzero
 
     fl = 0
     fnl = 0
     fnlu = 0
     do p = begp,endp
-       if (pft%active(p)) then
-          l =pft%landunit(p)
+       l = pft%landunit(p)
+       if (pft%wtgcell(p) > 0._r8    &
+                   .or.                       &
+           lun%itype(l)==istice_mec) then  ! some glacier_mec columns have zero weight
+
+          l = pft%landunit(p)
           if (lun%lakpoi(l) ) then
              fl = fl + 1
              filter(nc)%lakep(fl) = p
@@ -273,7 +276,7 @@ contains
 
     fs = 0
     do c = begc,endc
-       l =col%landunit(c)
+       l = col%landunit(c)
        if (lun%itype(l) == istsoil .or. lun%itype(l) == istcrop) then
           fs = fs + 1
           filter(nc)%soilc(fs) = c
@@ -282,12 +285,12 @@ contains
     filter(nc)%num_soilc = fs
 
     ! Create soil filter at pft-level
-    ! Filter will only be active if pft is active
+    ! Filter will only be active if weight of pft wrt gcell is nonzero
 
     fs = 0
     do p = begp,endp
-       if (pft%active(p)) then
-          l =pft%landunit(p)
+       if (pft%wtgcell(p) > 0._r8) then
+          l = pft%landunit(p)
           if (lun%itype(l) == istsoil .or. lun%itype(l) == istcrop) then
              fs = fs + 1
              filter(nc)%soilp(fs) = p
@@ -300,7 +303,7 @@ contains
 
     f = 0
     do c = begc,endc
-       l =col%landunit(c)
+       l = col%landunit(c)
        if (lun%itype(l) == istsoil .or. ctype(c) == icol_road_perv .or. &
            lun%itype(l) == istcrop) then
           f = f + 1
@@ -315,12 +318,12 @@ contains
     fl  = 0
     fnl = 0
     do p = begp,endp
-       if (pft%active(p)) then
+       if (pft%wtgcell(p) > 0._r8) then
           if (pft%itype(p) >= npcropmin) then !skips 2 generic crop types
              fl = fl + 1
              filter(nc)%pcropp(fl) = p
           else
-             l =pft%landunit(p)
+             l = pft%landunit(p)
              if (lun%itype(l) == istsoil .or. lun%itype(l) == istcrop) then
                 fnl = fnl + 1
                 filter(nc)%soilnopcropp(fnl) = p
@@ -329,7 +332,7 @@ contains
        end if
     end do
     filter(nc)%num_pcropp   = fl
-    filter(nc)%num_soilnopcropp = fnl   ! This wasn't being set before...
+    filter(nc)%soilnopcropp = fnl   ! This wasn't being set before...
 
     ! Create landunit-level urban and non-urban filters
 
@@ -352,7 +355,7 @@ contains
     f = 0
     fn = 0
     do c = begc,endc
-       l =col%landunit(c)
+       l = col%landunit(c)
        if (lun%itype(l) == isturb) then
           f = f + 1
           filter(nc)%urbanc(f) = c
@@ -369,8 +372,8 @@ contains
     f = 0
     fn = 0
     do p = begp,endp
-       l =pft%landunit(p)
-       if (lun%itype(l) == isturb .and. pft%active(p)) then
+       l = pft%landunit(p)
+       if (lun%itype(l) == isturb .and. pft%wtgcell(p) > 0._r8) then
           f = f + 1
           filter(nc)%urbanp(f) = p
        else

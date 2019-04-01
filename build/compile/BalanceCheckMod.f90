@@ -14,7 +14,7 @@ module BalanceCheckMod
   use shr_kind_mod, only: r8 => shr_kind_r8
   use abortutils,   only: endrun
   use clm_varctl,   only: iulog
-
+!
 ! !PUBLIC TYPES:
   implicit none
   save
@@ -47,11 +47,10 @@ contains
 ! !USES:
     use shr_kind_mod , only : r8 => shr_kind_r8
     use clmtype
-    use clm_varpar   , only : nlevgrnd, nlevsoi, nlevurb
+    use clm_varpar   , only : nlevgrnd, nlevsoi
     use subgridAveMod, only : p2c
     use clm_varcon   , only : icol_roof, icol_sunwall, icol_shadewall, icol_road_perv, &
                               icol_road_imperv
-    use clm_varcon   , only : denh2o, denice
 !
 ! !ARGUMENTS:
     implicit none
@@ -76,12 +75,6 @@ contains
 !
 ! local pointers to original implicit in variables
 !
-    real(r8), pointer :: h2osfc(:)             ! surface water (mm)
-    real(r8), pointer :: londeg(:)             ! longitude
-    real(r8), pointer :: latdeg(:)             ! latitude
-    integer , pointer :: cgridcell(:)          ! column's gridcell index
-    integer , pointer :: clandunit(:)          ! column's landunit
-    integer , pointer :: ltype(:)              ! landunit type
     real(r8), pointer :: h2osno(:)             ! snow water (mm H2O)
     real(r8), pointer :: h2osoi_ice(:,:)       ! ice lens (kg/m2)
     real(r8), pointer :: h2osoi_liq(:,:)       ! liquid water (kg/m2)
@@ -98,21 +91,11 @@ contains
 !
 ! !OTHER LOCAL VARIABLES:
 !
-    integer :: c, p, f, j, fc                  ! indices
-    real(r8):: h2osoi_vol
-    real(r8), pointer :: dz(:,:), watsat(:,:)
+    integer :: c, p, f, j, fc            ! indices
 !-----------------------------------------------------------------------
 
     ! Assign local pointers to derived type members (column-level)
 
-    h2osfc             => cws%h2osfc
-    londeg             =>  grc%londeg
-    latdeg             =>  grc%latdeg
-    cgridcell          =>col%gridcell
-    clandunit          =>col%landunit
-    ltype              => lun%itype
-    dz                 => cps%dz
-    watsat             => cps%watsat
     h2osno             => cws%h2osno
     h2osoi_ice         => cws%h2osoi_ice
     h2osoi_liq         => cws%h2osoi_liq
@@ -144,18 +127,13 @@ contains
           .or. ctype(c) == icol_shadewall .or. ctype(c) == icol_road_imperv) then
          begwb(c) = h2ocan_col(c) + h2osno(c)
        else
-         begwb(c) = h2ocan_col(c) + h2osno(c) + h2osfc(c) + wa(c)
+         begwb(c) = h2ocan_col(c) + h2osno(c) + wa(c)
        end if
-
     end do
     do j = 1, nlevgrnd
       do f = 1, num_nolakec
          c = filter_nolakec(f)
-         if ((ctype(c) == icol_sunwall .or. ctype(c) == icol_shadewall &
-          .or. ctype(c) == icol_roof) .and. j > nlevurb) then
-         else
-            begwb(c) = begwb(c) + h2osoi_ice(c,j) + h2osoi_liq(c,j)
-         end if
+         begwb(c) = begwb(c) + h2osoi_ice(c,j) + h2osoi_liq(c,j)
       end do
     end do
 
@@ -196,8 +174,8 @@ contains
     use clm_time_manager , only : get_step_size, get_nstep
     use clm_varcon   , only : isturb, icol_roof, icol_sunwall, icol_shadewall, &
                               spval, icol_road_perv, icol_road_imperv, istice_mec, &
-                              istdlak, istslak,istsoil,istcrop,istwet
-    use clm_varctl   , only : glc_dyntopo, create_glacier_mec_landunit
+                              istdlak, istslak, istwet, istcrop, istsoil
+    use clm_varctl   , only : glc_dyntopo
 !
 ! !ARGUMENTS:
     implicit none
@@ -220,33 +198,19 @@ contains
 !
 ! local pointers to original implicit in arguments
 !
-    real(r8), pointer :: tws(:)                !total water storage (mm H2O)
-    real(r8), pointer :: volr(:)               !river water storage (m3)
-    real(r8), pointer :: area(:)               !gridcell area (km2)
     logical , pointer :: do_capsnow(:)         ! true => do snow capping
+    real(r8), pointer :: qflx_floodc(:)     ! total runoff due to flooding
+    real(r8), pointer :: qflx_snow_melt(:)  ! snow melt (net)
     real(r8), pointer :: qflx_rain_grnd_col(:) ! rain on ground after interception (mm H2O/s) [+]
     real(r8), pointer :: qflx_snow_grnd_col(:) ! snow on ground after interception (mm H2O/s) [+]
-    real(r8), pointer :: qflx_snow_h2osfc(:)   ! snow falling on surface water (mm/s)
-    real(r8), pointer :: frac_sno_eff(:)       ! effective snow fraction
-    real(r8), pointer :: qflx_h2osfc_to_ice(:) ! conversion of h2osfc to ice
-    real(r8), pointer :: qflx_snow_melt(:)     ! snow melt (net)
-    real(r8), pointer :: frac_sno(:)           ! fraction of ground covered by snow (0 to 1)
-    real(r8), pointer :: qflx_drain_perched(:) ! sub-surface runoff (mm H2O /s)
-    real(r8), pointer :: qflx_floodc(:)        ! total runoff due to flooding
-    real(r8), pointer :: qflx_evap_soi(:)      ! soil evaporation (mm H2O/s) (+ = to atm)
-    real(r8), pointer :: qflx_h2osfc_surf(:)!surface water runoff (mm/s)
-    real(r8), pointer :: sabg_soil(:)       ! solar radiation absorbed by soil (W/m**2)
-    real(r8), pointer :: sabg_snow(:)       ! solar radiation absorbed by snow (W/m**2)
-    real(r8), pointer :: sabg_chk(:)        ! sum of soil/snow using current fsno, for balance check
-    integer , pointer :: pcolumn(:)         ! pft's column index
-    logical , pointer :: pactive(:)         ! true=>do computations on this pft (see reweightMod for details)
-    logical , pointer :: cactive(:)         ! true=>do computations on this column (see reweightMod for details)
     integer , pointer :: pgridcell(:)       ! pft's gridcell index
     integer , pointer :: plandunit(:)       ! pft's landunit index
     integer , pointer :: cgridcell(:)       ! column's gridcell index
     integer , pointer :: clandunit(:)       ! column's landunit index
     integer , pointer :: ltype(:)           ! landunit type 
     integer , pointer :: ctype(:)           ! column type 
+    real(r8), pointer :: pwtgcell(:)        ! pft's weight relative to corresponding gridcell
+    real(r8), pointer :: cwtgcell(:)        ! column's weight relative to corresponding gridcell
     real(r8), pointer :: forc_rain(:)       ! rain rate [mm/s]
     real(r8), pointer :: forc_snow(:)       ! snow rate [mm/s]
     real(r8), pointer :: forc_lwrad(:)      ! downward infrared (longwave) radiation (W/m**2)
@@ -316,29 +280,17 @@ contains
     integer  :: indexp,indexc,indexl,indexg ! index of first found in search loop
     real(r8) :: forc_rain_col(lbc:ubc)      ! column level rain rate [mm/s]
     real(r8) :: forc_snow_col(lbc:ubc)      ! column level snow rate [mm/s]
+
 !-----------------------------------------------------------------------
 
     ! Assign local pointers to derived type scalar members (gridcell-level)
 
-    tws                 =>  grc%tws
-    area                =>  grc%area
-    volr                => clm_a2l%volr
     do_capsnow          => cps%do_capsnow
+    qflx_floodc         => cwf%qflx_floodc
+    qflx_snow_melt      => cwf%qflx_snow_melt
     qflx_rain_grnd_col  => pwf_a%qflx_rain_grnd
     qflx_snow_grnd_col  => pwf_a%qflx_snow_grnd
-    qflx_snow_h2osfc    => cwf%qflx_snow_h2osfc
-    frac_sno_eff        => cps%frac_sno_eff
-    qflx_h2osfc_to_ice  => cwf%qflx_h2osfc_to_ice
-    frac_sno            => cps%frac_sno 
-    qflx_drain_perched  => cwf%qflx_drain_perched
-    qflx_floodc         => cwf%qflx_floodc
-    qflx_evap_soi       => pwf_a%qflx_evap_soi
-    qflx_h2osfc_surf    => cwf%qflx_h2osfc_surf
-    qflx_snow_melt      => cwf%qflx_snow_melt
-    sabg_soil           => pef%sabg_soil
-    sabg_snow           => pef%sabg_snow
-    sabg_chk            => pef%sabg_chk
-    pcolumn             =>pft%column
+    clandunit           => col%landunit
     forc_rain           => clm_a2l%forc_rain
     forc_snow           => clm_a2l%forc_snow
     forc_lwrad          => clm_a2l%forc_lwrad
@@ -348,14 +300,13 @@ contains
     ! Assign local pointers to derived type scalar members (landunit-level)
 
     ltype             => lun%itype
-    canyon_hwr        =>lun%canyon_hwr
+    canyon_hwr        => lun%canyon_hwr
 
     ! Assign local pointers to derived type scalar members (column-level)
 
-    cactive           => col%active
     ctype             => col%itype
-    cgridcell         =>col%gridcell
-    clandunit         =>col%landunit
+    cgridcell         => col%gridcell
+    cwtgcell          => col%wtgcell
     endwb             => cwbal%endwb
     begwb             => cwbal%begwb
     qflx_irrig        => cwf%qflx_irrig
@@ -386,9 +337,9 @@ contains
 
     ! Assign local pointers to derived type scalar members (pft-level)
 
-    pactive           => pft%active
-    pgridcell         =>pft%gridcell
-    plandunit         =>pft%landunit
+    pgridcell         => pft%gridcell
+    plandunit         => pft%landunit
+    pwtgcell          => pft%wtgcell
     fsa               => pef%fsa
     fsr               => pef%fsr
     eflx_lwrad_out    => pef%eflx_lwrad_out
@@ -439,13 +390,13 @@ contains
     do c = lbc, ubc
        g = cgridcell(c)
        l = clandunit(c)
-      
-       ! add qflx_drain_perched and qflx_flood
-       if (cactive(c))then
+
+       ! Note: Some glacier_mec cols may have zero weight
+       if (cwtgcell(c) > 0._r8 .or. ltype(l)==istice_mec)then
           errh2o(c) = endwb(c) - begwb(c) &
-               - (forc_rain_col(c) + forc_snow_col(c)  + qflx_floodc(c) + qflx_irrig(c) &
-                 - qflx_evap_tot(c) - qflx_surf(c)  - qflx_h2osfc_surf(c) &
-                 - qflx_qrgwl(c) - qflx_drain(c) - qflx_drain_perched(c) - qflx_snwcp_ice(c)) * dtime
+               - (forc_rain_col(c) + forc_snow_col(c) + qflx_irrig(c) + qflx_floodc(c) &
+               - qflx_evap_tot(c) - qflx_surf(c) &
+               - qflx_qrgwl(c) - qflx_drain(c) - qflx_snwcp_ice(c)) * dtime
 
           ! Suppose glc_dyntopo = T:   
           ! (1) We have qflx_snwcp_ice = 0, and excess snow has been incorporated in qflx_glcice.  
@@ -476,10 +427,9 @@ contains
           indexc = c
        end if
     end do
-
     if ( found ) then
        write(iulog,*)'WARNING:  water balance error ',&
-            ' nstep = ',nstep,' indexc= ',indexc,' errh2o= ',errh2o(indexc)
+            ' nstep = ',nstep,' indexc= ',indexc,' errh2o= ',errh2o(indexc),' landunit type= ',ltype(clandunit(indexc))
        if ((ctype(indexc) .eq. icol_roof .or. ctype(indexc) .eq. icol_road_imperv .or. &
             ctype(indexc) .eq. icol_road_perv) .and. abs(errh2o(indexc)) > 1.e-1 .and. (nstep > 2) ) then
           write(iulog,*)'clm urban model is stopping - error is greater than 1.e-1'
@@ -494,6 +444,7 @@ contains
           write(iulog,*)'qflx_surf    = ',qflx_surf(indexc)
           write(iulog,*)'qflx_qrgwl   = ',qflx_qrgwl(indexc)
           write(iulog,*)'qflx_drain   = ',qflx_drain(indexc)
+          write(iulog,*)'qflx_flood   = ',qflx_floodc(indexc)
           write(iulog,*)'qflx_snwcp_ice   = ',qflx_snwcp_ice(indexc)
           write(iulog,*)'clm model is stopping'
           call endrun()
@@ -508,10 +459,8 @@ contains
           write(iulog,*)'qflx_evap_tot= ',qflx_evap_tot(indexc)
           write(iulog,*)'qflx_irrig   = ',qflx_irrig(indexc)
           write(iulog,*)'qflx_surf    = ',qflx_surf(indexc)
-          write(iulog,*)'qflx_h2osfc_surf    = ',qflx_h2osfc_surf(indexc)
           write(iulog,*)'qflx_qrgwl   = ',qflx_qrgwl(indexc)
           write(iulog,*)'qflx_drain   = ',qflx_drain(indexc)
-          write(iulog,*)'qflx_drain_perched   = ',qflx_drain_perched(indexc)
           write(iulog,*)'qflx_flood   = ',qflx_floodc(indexc)
           write(iulog,*)'qflx_snwcp_ice   = ',qflx_snwcp_ice(indexc)
           write(iulog,*)'clm model is stopping'
@@ -520,79 +469,84 @@ contains
     end if
 
     ! Snow balance check
-
     do c = lbc, ubc
        g = cgridcell(c)
        l = clandunit(c)
-          ! As defined here, snow_sources - snow_sinks will equal the change in h2osno at 
-          ! any given time step but only if there is at least one snow layer.  h2osno 
-          ! also includes snow that is part of the soil column (an initial snow layer is 
-          ! only created if h2osno > 10mm).
-          if (snl(c) .lt. 0) then
-             snow_sources(c) = qflx_prec_grnd(c) + qflx_dew_snow(c) + qflx_dew_grnd(c)
-             snow_sinks(c)   = qflx_sub_snow(c) + qflx_evap_grnd(c) + qflx_snow_melt(c) &
-                               + qflx_snwcp_ice(c) + qflx_snwcp_liq(c) + qflx_sl_top_soil(c)
+       ! As defined here, snow_sources - snow_sinks will equal the change in h2osno at 
+       ! any given time step but only if there is at least one snow layer.  h2osno 
+       ! also includes snow that is part of the soil column (an initial snow layer is 
+       ! only created if h2osno > 10mm).
 
-             if (ltype(l) == istdlak) then 
-                if ( do_capsnow(c) ) then
-                   snow_sources(c) = qflx_snow_grnd_col(c) &
-                        + frac_sno_eff(c) * (qflx_dew_snow(c) + qflx_dew_grnd(c) ) 
+       ! --------------------------------------------------------------------- !
+       ! SPM - brought in qflx_snow_melt to get snow 
+       ! balance working after the flooding modifications were in place.
+       ! This new check is based on a perfrostsims branch of S. Swenson.
+       ! --------------------------------------------------------------------- !
+
+       if (snl(c) .lt. 0) then
+          snow_sources(c) = qflx_prec_grnd(c) + qflx_dew_snow(c) + qflx_dew_grnd(c)
+          snow_sinks(c)   = qflx_sub_snow(c) + qflx_evap_grnd(c) + qflx_snow_melt(c) &
+                          + qflx_snwcp_ice(c) + qflx_snwcp_liq(c) + qflx_sl_top_soil(c)
+
+          if (ltype(l) == istdlak) then 
+             if ( do_capsnow(c) ) then
+                snow_sources(c) = qflx_snow_grnd_col(c) &
+                     + qflx_dew_snow(c) + qflx_dew_grnd(c)  
+                
+                snow_sinks(c)   = qflx_sub_snow(c) + qflx_evap_grnd(c)  &
+                     + (qflx_snwcp_ice(c) + qflx_snwcp_liq(c) - qflx_prec_grnd(c))  &
+                     + qflx_snow_melt(c)  + qflx_sl_top_soil(c)
+             else
+                snow_sources(c) = qflx_snow_grnd_col(c) &
+                     + qflx_rain_grnd_col(c) &
+                     + qflx_dew_snow(c) + qflx_dew_grnd(c) 
                    
-                   snow_sinks(c)   = frac_sno_eff(c) * (qflx_sub_snow(c) + qflx_evap_grnd(c) ) &
-                        + (qflx_snwcp_ice(c) + qflx_snwcp_liq(c) - qflx_prec_grnd(c))  &
-                        + qflx_snow_melt(c)  + qflx_sl_top_soil(c)
-                else
-                   snow_sources(c) = qflx_snow_grnd_col(c) &
-                        + frac_sno_eff(c) * (qflx_rain_grnd_col(c) &
-                        +  qflx_dew_snow(c) + qflx_dew_grnd(c) ) 
-                   
-                   snow_sinks(c)   = frac_sno_eff(c) * (qflx_sub_snow(c) + qflx_evap_grnd(c) ) &
-                        + qflx_snow_melt(c)  + qflx_sl_top_soil(c)
-                endif
+                snow_sinks(c)   = qflx_sub_snow(c) + qflx_evap_grnd(c)  &
+                     + qflx_snow_melt(c)  + qflx_sl_top_soil(c)
              endif
+          endif
 
-             if (ltype(l) == istsoil .or. ltype(l) == istcrop .or. ltype(l) == istwet ) then
-                 if ( do_capsnow(c) ) then
-                    snow_sources(c) = frac_sno_eff(c) * (qflx_dew_snow(c) + qflx_dew_grnd(c) ) &
-                         + qflx_h2osfc_to_ice(c) + qflx_prec_grnd(c)
+          if (ltype(l) == istsoil .or. ltype(l) == istcrop .or. ltype(l) == istwet ) then
+              if ( do_capsnow(c) ) then
+                 snow_sources(c) = qflx_dew_snow(c) + qflx_dew_grnd(c)  &
+                     + qflx_prec_grnd(c)
 
-                    snow_sinks(c)   = frac_sno_eff(c) * (qflx_sub_snow(c) + qflx_evap_grnd(c)) &
-                         + qflx_snwcp_ice(c) + qflx_snwcp_liq(c) &
-                         + qflx_snow_melt(c) + qflx_sl_top_soil(c)
-                 else
-                    snow_sources(c) = (qflx_snow_grnd_col(c) - qflx_snow_h2osfc(c) ) &
-                         + frac_sno_eff(c) * (qflx_rain_grnd_col(c) &
-                         +  qflx_dew_snow(c) + qflx_dew_grnd(c) ) + qflx_h2osfc_to_ice(c)
+                 snow_sinks(c)   = qflx_sub_snow(c) + qflx_evap_grnd(c) &
+                     + qflx_snwcp_ice(c) + qflx_snwcp_liq(c) &
+                     + qflx_snow_melt(c) + qflx_sl_top_soil(c)
+              else
+                 snow_sources(c) = qflx_snow_grnd_col(c)  &
+                     + qflx_rain_grnd_col(c) &
+                     +  qflx_dew_snow(c) + qflx_dew_grnd(c)
 
-                   snow_sinks(c)   = frac_sno_eff(c) * (qflx_sub_snow(c) + qflx_evap_grnd(c)) &
-                        + qflx_snow_melt(c) + qflx_sl_top_soil(c)
-                endif
+                 snow_sinks(c)   = qflx_sub_snow(c) + qflx_evap_grnd(c) &
+                     + qflx_snow_melt(c) + qflx_sl_top_soil(c)
              endif
+          endif
 
-             ! For ice_mec landunits, if glc_dyntopo is true, then qflx_snwcp_ice = 0,
-             ! and qflx_glcice_frz instead stores this flux
-             if (ltype(l) == istice_mec .and. glc_dyntopo) then
-                snow_sinks(c) = snow_sinks(c) + qflx_glcice_frz(c)
-             end if
-
-             errh2osno(c) = (h2osno(c) - h2osno_old(c)) - (snow_sources(c) - snow_sinks(c)) * dtime
-          else
-             snow_sources(c) = 0._r8
-             snow_sinks(c) = 0._r8
-             errh2osno(c) = 0._r8
+          if (ltype(l) == istice_mec .and. glc_dyntopo) then
+             snow_sinks(c) = snow_sinks(c) + qflx_glcice_frz(c)
           end if
+
+          errh2osno(c) = (h2osno(c) - h2osno_old(c)) - (snow_sources(c) - snow_sinks(c)) * dtime
+       else
+          snow_sources(c) = 0._r8
+          snow_sinks(c) = 0._r8
+          errh2osno(c) = 0._r8
+       end if
     end do
 
     found = .false.
     do c = lbc, ubc
-       if (cactive(c) .and. abs(errh2osno(c)) > 1.0e-7_r8) then
+       if (cwtgcell(c) > 0._r8 .and. abs(errh2osno(c)) > 1.0e-7_r8) then
           found = .true.
           indexc = c
        end if
     end do
+
     if ( found ) then
        write(iulog,*)'WARNING:  snow balance error ',&
-            ' nstep = ',nstep,' indexc= ',indexc,'ltype: ', ltype(clandunit(indexc)),' errh2osno= ',errh2osno(indexc)
+            ' nstep = ',nstep,' indexc= ',indexc,' errh2osno= ',errh2osno(indexc)
        if (abs(errh2osno(indexc)) > 0.1_r8 .and. (nstep > 2) ) then
           write(iulog,*)'clm model is stopping - error is greater than .10'
           write(iulog,*)'nstep = ',nstep,' indexc= ',indexc,' errh2osno= ',errh2osno(indexc)
@@ -610,9 +564,9 @@ contains
           write(iulog,*)'qflx_dew_snow: ',qflx_dew_snow(indexc)*dtime
           write(iulog,*)'qflx_dew_grnd: ',qflx_dew_grnd(indexc)*dtime
           write(iulog,*)'qflx_snwcp_ice: ',qflx_snwcp_ice(indexc)*dtime
+          write(iulog,*)'qflx_snow_melt: ',qflx_snow_melt(indexc)*dtime
           write(iulog,*)'qflx_snwcp_liq: ',qflx_snwcp_liq(indexc)*dtime
           write(iulog,*)'qflx_sl_top_soil: ',qflx_sl_top_soil(indexc)*dtime
-          if (create_glacier_mec_landunit) &
           write(iulog,*)'qflx_glcice_frz: ',qflx_glcice_frz(indexc)*dtime
           write(iulog,*)'clm model is stopping'
           call endrun()
@@ -622,8 +576,9 @@ contains
     ! Energy balance checks
 
     do p = lbp, ubp
-       if (pactive(p)) then
-          l = plandunit(p)
+       l = plandunit(p)
+       ! Note: Some glacier_mec pfts may have zero weight
+       if (pwtgcell(p)>0._r8 .or. ltype(l)==istice_mec) then
           g = pgridcell(p)
 
           ! Solar radiation energy balance
@@ -654,8 +609,7 @@ contains
           ! and a separate check is done above for these terms.
           
           if (ltype(l) /= isturb) then
-             c=pcolumn(p)
-             errseb(p) = sabv(p) + sabg_chk(p) + forc_lwrad(g) - eflx_lwrad_out(p) &
+             errseb(p) = sabv(p) + sabg(p) + forc_lwrad(g) - eflx_lwrad_out(p) &
                          - eflx_sh_tot(p) - eflx_lh_tot(p) - eflx_soil_grnd(p)
           else
              errseb(p) = sabv(p) + sabg(p) &
@@ -671,7 +625,8 @@ contains
 
     found = .false.
     do p = lbp, ubp
-       if (pactive(p)) then
+       l = plandunit(p)
+       if (pwtgcell(p)>0._r8 .or. ltype(l)==istice_mec) then
           if ( (errsol(p) /= spval) .and. (abs(errsol(p)) > .10_r8) ) then
              found = .true.
              indexp = p
@@ -697,7 +652,8 @@ contains
 
     found = .false.
     do p = lbp, ubp
-       if (pactive(p)) then
+       l = plandunit(p)
+       if (pwtgcell(p)>0._r8 .or. ltype(l)==istice_mec) then
           if ( (errlon(p) /= spval) .and. (abs(errlon(p)) > .10_r8) ) then
              found = .true.
              indexp = p
@@ -714,7 +670,8 @@ contains
 
     found = .false.
     do p = lbp, ubp
-       if (pactive(p)) then
+       l = plandunit(p)
+       if (pwtgcell(p)>0._r8 .or. ltype(l)==istice_mec) then
           if (abs(errseb(p)) > .10_r8 ) then
              found = .true.
              indexp = p
@@ -724,10 +681,7 @@ contains
     if ( found  .and. (nstep > 2) ) then
        write(iulog,100)'BalanceCheck: surface flux energy balance error',nstep,indexp,errseb(indexp)
        write(iulog,*)' sabv           = ',sabv(indexp)
-       c=pcolumn(indexp)
-       write(iulog,*)' column      = ',c
-       write(iulog,*)' sabg           = ',sabg(indexp), ((1._r8- frac_sno(c))*sabg_soil(indexp) + &
-                                          frac_sno(c)*sabg_snow(indexp)),sabg_chk(indexp)
+       write(iulog,*)' sabg           = ',sabg(indexp)
        write(iulog,*)' eflx_lwrad_net = ',eflx_lwrad_net(indexp)
        write(iulog,*)' eflx_sh_tot    = ',eflx_sh_tot(indexp)
        write(iulog,*)' eflx_lh_tot    = ',eflx_lh_tot(indexp)
@@ -746,9 +700,8 @@ contains
        end if
     end do
     if ( found ) then
+       write(iulog,100)'BalanceCheck: soil balance error',nstep,indexc,errsoi_col(indexc)
        if (abs(errsoi_col(indexc)) > .10_r8 .and. (nstep > 2) ) then
-          write(iulog,100)'BalanceCheck: soil balance error',nstep,indexc,errsoi_col(indexc)
-          write(iulog,*)'nstep = ',nstep,' indexc= ',indexc,' errsoi_col= ',errsoi_col(indexc)
           write(iulog,*)'clm model is stopping'
           call endrun()
        end if
@@ -776,16 +729,6 @@ contains
        eflx_sh_totg(g) =  eflx_sh_totg(g) - eflx_dynbal(g)
     enddo
 
-! calculate total water storage for history files
-! first set tws to gridcell total endwb
-    call c2g( lbc, ubc, lbl, ubl, lbg, ubg,                &
-         endwb(lbc:ubc), tws(lbg:ubg), &
-         c2l_scale_type= 'urbanf', l2g_scale_type='unity' )
-! second add river storage as gridcell average depth
-! 1.e-3 converts [m3/km2] to [mm]
-    do g = lbg, ubg
-       tws(g) = tws(g) + volr(g) / area(g) * 1.e-3_r8
-    enddo
 100 format (1x,a,' nstep =',i10,' point =',i6,' imbalance =',f12.6,' W/m2')
 200 format (1x,a,' nstep =',i10,' point =',i6,' imbalance =',f12.6,' mm')
 

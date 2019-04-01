@@ -14,7 +14,7 @@ module UrbanInitMod
   use shr_kind_mod, only : r8 => shr_kind_r8
   use abortutils  , only : endrun  
   use shr_sys_mod , only : shr_sys_flush 
-  use clm_varctl  , only : iulog
+  use clm_varctl  , only : iulog, use_vancouver, use_mexicocity
   use UrbanMod,     only : urban_traffic, urban_hac, urban_hac_off
 !
 ! !PUBLIC TYPES:
@@ -89,10 +89,10 @@ contains
     ! Assign local pointers to derived type members (landunit level)
 
     ltype      => lun%itype
-    z_0_town   =>lun%z_0_town
-    z_d_town   =>lun%z_d_town
-    ht_roof    =>lun%ht_roof
-    canyon_hwr =>lun%canyon_hwr
+    z_0_town   => lun%z_0_town
+    z_d_town   => lun%z_d_town
+    ht_roof    => lun%ht_roof
+    canyon_hwr => lun%canyon_hwr
 
     call get_proc_bounds(begg, endg, begl, endl, begc, endc, begp, endp)
 
@@ -114,25 +114,25 @@ contains
          
          ! Calculate displacement height
          
+         if (use_vancouver) then
+            z_d_town(l) = 3.5_r8
+         else if (use_mexicocity) then
+            z_d_town(l) = 10.9_r8
+         else
+            z_d_town(l) = (1._r8 + alpha**(-plan_ai) * (plan_ai - 1._r8)) * ht_roof(l)
+         end if
 
-
-
-
-
-         z_d_town(l) = (1._r8 + alpha**(-plan_ai) * (plan_ai - 1._r8)) * ht_roof(l)
-
-         
          ! Calculate the roughness length
          
-
-
-
-
-
-         z_0_town(l) = ht_roof(l) * (1._r8 - z_d_town(l) / ht_roof(l)) * &
-                       exp(-1.0_r8 * (0.5_r8 * beta * C_d / vkc**2 * &
-                       (1 - z_d_town(l) / ht_roof(l)) * frontal_ai)**(-0.5_r8))
-
+         if (use_vancouver) then
+            z_0_town(l) = 0.35_r8
+         else if (use_mexicocity) then
+            z_0_town(l) = 2.2_r8
+         else
+            z_0_town(l) = ht_roof(l) * (1._r8 - z_d_town(l) / ht_roof(l)) * &
+                          exp(-1.0_r8 * (0.5_r8 * beta * C_d / vkc**2 * &
+                          (1 - z_d_town(l) / ht_roof(l)) * frontal_ai)**(-0.5_r8))
+         end if
       end if
    end do
 
@@ -152,8 +152,7 @@ contains
 ! !USES:
     use clmtype 
     use clm_varcon   , only : isturb, icol_roof, icol_sunwall, icol_shadewall, &
-                              icol_road_perv, icol_road_imperv, spval, &
-                              udens_base
+                              icol_road_perv, icol_road_imperv, spval
     use decompMod    , only : get_proc_bounds, ldecomp
     use UrbanInputMod, only : urbinp
 !
@@ -191,7 +190,6 @@ contains
     real(r8), pointer :: thick_wall(:)          ! thickness of urban wall (m)
     real(r8), pointer :: thick_roof(:)          ! thickness of urban roof (m)
     integer,  pointer :: nlev_improad(:)        ! number of impervious road layers (-)
-    integer,  pointer :: udenstype(:)           ! urban density type
 !
 !
 ! !OTHER LOCAL VARIABLES
@@ -202,24 +200,22 @@ contains
     integer  :: begc, endc                ! clump beginning and ending column indices
     integer  :: begl, endl                ! clump beginning and ending landunit indices
     integer  :: begg, endg                ! clump beginning and ending gridcell indices
-    integer  :: dindx                     ! urban density type index
 
     ! Assign local pointers to derived type members (landunit-level)
 
     ltype               => lun%itype
-    lgridcell           =>lun%gridcell
-    coli                =>lun%coli
-    colf                =>lun%colf
-    udenstype           =>lun%udenstype
-    canyon_hwr          =>lun%canyon_hwr
-    wtroad_perv         =>lun%wtroad_perv 
-    ht_roof             =>lun%ht_roof
-    wtlunit_roof        =>lun%wtlunit_roof
-    wind_hgt_canyon     =>lun%wind_hgt_canyon
+    lgridcell           => lun%gridcell
+    coli                => lun%coli
+    colf                => lun%colf
+    canyon_hwr          => lun%canyon_hwr
+    wtroad_perv         => lun%wtroad_perv 
+    ht_roof             => lun%ht_roof
+    wtlunit_roof        => lun%wtlunit_roof
+    wind_hgt_canyon     => lun%wind_hgt_canyon
     eflx_traffic_factor => lef%eflx_traffic_factor
     t_building_max      => lps%t_building_max
     t_building_min      => lps%t_building_min
-    canyon_hwr          =>lun%canyon_hwr
+    canyon_hwr          => lun%canyon_hwr
     tk_wall             => lps%tk_wall
     tk_roof             => lps%tk_roof
     tk_improad          => lps%tk_improad
@@ -241,31 +237,30 @@ contains
 
     do l = begl, endl
        if (ltype(l) == isturb) then
-          g =lun%gridcell(l)
-          dindx = udenstype(l) - udens_base
-          canyon_hwr(l)         = urbinp%canyon_hwr(g,dindx)
-          wtroad_perv(l)        = urbinp%wtroad_perv(g,dindx)
-          ht_roof(l)            = urbinp%ht_roof(g,dindx)
-          wtlunit_roof(l)       = urbinp%wtlunit_roof(g,dindx)
-          wind_hgt_canyon(l)    = urbinp%wind_hgt_canyon(g,dindx)
-          tk_wall(l,:)          = urbinp%tk_wall(g,dindx,:)
-          tk_roof(l,:)          = urbinp%tk_roof(g,dindx,:)
-          tk_improad(l,:)       = urbinp%tk_improad(g,dindx,:)
-          cv_wall(l,:)          = urbinp%cv_wall(g,dindx,:)
-          cv_roof(l,:)          = urbinp%cv_roof(g,dindx,:)
-          cv_improad(l,:)       = urbinp%cv_improad(g,dindx,:)
-          thick_wall(l)         = urbinp%thick_wall(g,dindx)
-          thick_roof(l)         = urbinp%thick_roof(g,dindx)
-          nlev_improad(l)       = urbinp%nlev_improad(g,dindx)
-          t_building_min(l)     = urbinp%t_building_min(g,dindx)
-          t_building_max(l)     = urbinp%t_building_max(g,dindx)
+          g = lun%gridcell(l)
+          canyon_hwr(l)         = urbinp%canyon_hwr(g)
+          wtroad_perv(l)        = urbinp%wtroad_perv(g)
+          ht_roof(l)            = urbinp%ht_roof(g)
+          wtlunit_roof(l)       = urbinp%wtlunit_roof(g)
+          wind_hgt_canyon(l)    = urbinp%wind_hgt_canyon(g)
+          tk_wall(l,:)          = urbinp%tk_wall(g,:)
+          tk_roof(l,:)          = urbinp%tk_roof(g,:)
+          tk_improad(l,:)       = urbinp%tk_improad(g,:)
+          cv_wall(l,:)          = urbinp%cv_wall(g,:)
+          cv_roof(l,:)          = urbinp%cv_roof(g,:)
+          cv_improad(l,:)       = urbinp%cv_improad(g,:)
+          thick_wall(l)         = urbinp%thick_wall(g)
+          thick_roof(l)         = urbinp%thick_roof(g)
+          nlev_improad(l)       = urbinp%nlev_improad(g)
+          t_building_min(l)     = urbinp%t_building_min(g)
+          t_building_max(l)     = urbinp%t_building_max(g)
 
           do c = coli(l),colf(l)
-             if (ctype(c) == icol_roof       ) emg(c) = urbinp%em_roof(g,dindx)
-             if (ctype(c) == icol_sunwall    ) emg(c) = urbinp%em_wall(g,dindx)
-             if (ctype(c) == icol_shadewall  ) emg(c) = urbinp%em_wall(g,dindx)
-             if (ctype(c) == icol_road_imperv) emg(c) = urbinp%em_improad(g,dindx)
-             if (ctype(c) == icol_road_perv  ) emg(c) = urbinp%em_perroad(g,dindx)
+             if (ctype(c) == icol_roof       ) emg(c) = urbinp%em_roof(g)
+             if (ctype(c) == icol_sunwall    ) emg(c) = urbinp%em_wall(g)
+             if (ctype(c) == icol_shadewall  ) emg(c) = urbinp%em_wall(g)
+             if (ctype(c) == icol_road_imperv) emg(c) = urbinp%em_improad(g)
+             if (ctype(c) == icol_road_perv  ) emg(c) = urbinp%em_perroad(g)
           end do
 
           ! Inferred from Sailor and Lu 2004
@@ -275,17 +270,17 @@ contains
              eflx_traffic_factor(l) = 0.0_r8
           end if
 
-
-
-
-
-
-          if (urban_hac == urban_hac_off) then
-            ! Overwrite values read in from urbinp by freely evolving values
-            t_building_max(l) = 380.00_r8
-            t_building_min(l) = 200.00_r8
+          if (use_vancouver .or. use_mexicocity) then 
+             ! Freely evolving
+             t_building_max(l) = 380.00_r8
+             t_building_min(l) = 200.00_r8
+          else
+             if (urban_hac == urban_hac_off) then
+                ! Overwrite values read in from urbinp by freely evolving values
+                t_building_max(l) = 380.00_r8
+                t_building_min(l) = 200.00_r8
+             end if
           end if
-
        else
           eflx_traffic_factor(l) = spval
           t_building_max(l) = spval
@@ -373,14 +368,14 @@ contains
     taf                => lps%taf
     qaf                => lps%qaf
     ltype              => lun%itype
-    lgridcell          =>lun%gridcell
+    lgridcell          => lun%gridcell
     t_building         => lps%t_building
     eflx_traffic       => lef%eflx_traffic
     eflx_wasteheat     => lef%eflx_wasteheat
 
     ! Assign local pointers to derived type members (column level)
 
-    clandunit          =>col%landunit
+    clandunit          => col%landunit
     eflx_building_heat => cef%eflx_building_heat
     eflx_urban_ac      => cef%eflx_urban_ac
     eflx_urban_heat    => cef%eflx_urban_heat
@@ -398,7 +393,7 @@ contains
     t_ref2m_min_u      => pes%t_ref2m_min_u
     t_ref2m_max_u      => pes%t_ref2m_max_u
     rh_ref2m_u         => pes%rh_ref2m_u
-    plandunit          =>pft%landunit
+    plandunit          => pft%landunit
     eflx_wasteheat_pft => pef%eflx_wasteheat_pft
     eflx_heat_from_ac_pft => pef%eflx_heat_from_ac_pft
     eflx_traffic_pft => pef%eflx_traffic_pft
@@ -414,17 +409,17 @@ contains
     do l = begl, endl 
        g = lgridcell(l)
        if (ltype(l) == isturb) then 
-
-
-
-
-
-
-
-          taf(l) = 283._r8
-          ! Arbitrary set since forc_q is not yet available
-          qaf(l) = 1.e-4_r8
-
+          if (use_vancouver) then
+             taf(l) = 297.56_r8
+             qaf(l) = 0.0111_r8
+          else if (use_mexicocity) then
+             taf(l) = 289.46_r8
+             qaf(l) = 0.00248_r8
+          else
+             taf(l) = 283._r8
+             ! Arbitrary set since forc_q is not yet available
+             qaf(l) = 1.e-4_r8
+          end if
        else
           t_building(l)     = spval
           eflx_traffic(l)   = spval

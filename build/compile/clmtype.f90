@@ -21,7 +21,7 @@ module clmtype
 !   1  => (istsoil)    soil (vegetated or bare soil landunit)
 !   2  => (istice)     land ice
 !   3  => (istdlak)    deep lake
-!   4  => (istslak) shall lake (not currently implemented; SLake implementation has variable depth)
+!   4  => (istslak)    shallow lake (not currently implemented)
 !   5  => (istwet)     wetland
 !   6  => (isturb)     urban
 !   7  => (istice_mec) land ice (multiple elevation classes) 
@@ -61,13 +61,9 @@ module clmtype
 !   15 => c3_crop
 !   16 => c3_irrigated
 !   17 => corn
-!   18 => irrigated corn
-!   19 => spring temperate cereal
-!   20 => irrigated spring temperate cereal
-!   21 => winter temperate cereal
-!   22 => irrigated winter temperate cereal
-!   23 => soybean
-!   24 => irrigated soybean
+!   18 => spring temperate cereal
+!   19 => winter temperate cereal
+!   20 => soybean
 ! -------------------------------------------------------- 
 !
 ! !USES:
@@ -76,10 +72,12 @@ module clmtype
 !
 ! !PUBLIC TYPES:
   implicit none
+
+  public
 !                              
 ! !REVISION HISTORY:
 ! Created by Peter Thornton and Mariana Vertenstein
-! F. Li and S. Levis (11/06/12)
+!
 !*******************************************************************************
 !----------------------------------------------------
 ! Begin definition of conservation check structures
@@ -144,8 +142,6 @@ type(nitrogen_balance_type) :: cnbal !nitrogen balance structure
 ! pft physical state variables structure
 !----------------------------------------------------
 type, public :: pft_pstate_type
-   real(r8), pointer :: prec60(:)              !60-day running mean of tot. precipitation (mm/s) added by F. Li and S. Levis
-   real(r8), pointer :: prec10(:)              !10-day running mean of tot. precipitation (mm/s) added by F. Li and S. Levis
    integer , pointer :: frac_veg_nosno(:)       !fraction of vegetation not covered by snow (0 OR 1) [-] 
    integer , pointer :: frac_veg_nosno_alb(:)   !fraction of vegetation not covered by snow (0 OR 1) [-] 
    real(r8), pointer :: emv(:)                  !vegetation emissivity
@@ -157,17 +153,10 @@ type, public :: pft_pstate_type
    real(r8), pointer :: rresis(:,:)             !root resistance by layer (0-1)  (nlevgrnd)
    real(r8), pointer :: dewmx(:)                !Maximum allowed dew [mm]
    real(r8), pointer :: rssun(:)                !sunlit stomatal resistance (s/m)
-   real(r8), pointer :: rhal(:)                 !relative humidity of the canopy air vs leaf
-   real(r8), pointer :: vpdal(:)                !vpd of the canopy air vs leaf
    real(r8), pointer :: rssha(:)                !shaded stomatal resistance (s/m)
-   real(r8), pointer :: rssun_z(:,:)            !canopy layer: sunlit leaf stomatal resistance (s/m)
-   real(r8), pointer :: rssha_z(:,:)            !canopy layer: shaded leaf stomatal resistance (s/m)
    real(r8), pointer :: laisun(:)               !sunlit projected leaf area index
    real(r8), pointer :: laisha(:)               !shaded projected leaf area index
-   real(r8), pointer :: laisun_z(:,:)           !sunlit leaf area for canopy layer
-   real(r8), pointer :: laisha_z(:,:)           !shaded leaf area for canopy layer
    real(r8), pointer :: btran(:)                !transpiration wetness factor (0 to 1)
-   real(r8), pointer :: btran2(:)               ! root zone soil wetness factor (0 to 1) added by F. Li and S. Levis
    real(r8), pointer :: fsun(:)                 !sunlit fraction of canopy
    real(r8), pointer :: tlai(:)                 !one-sided leaf area index, no burying by snow
    real(r8), pointer :: tsai(:)                 !one-sided stem area index, no burying by snow
@@ -180,41 +169,21 @@ type, public :: pft_pstate_type
    real(r8), pointer :: hbot(:)                 !canopy bottom (m)
    real(r8), pointer :: z0m(:)                  !momentum roughness length (m)
    real(r8), pointer :: displa(:)               !displacement height (m)
-   real(r8), pointer :: albd(:,:)               !surface albedo (direct)                              (numrad)
-   real(r8), pointer :: albi(:,:)               !surface albedo (diffuse)                             (numrad)
-   real(r8), pointer :: fabd(:,:)               !flux absorbed by canopy per unit direct flux         (numrad)
-   real(r8), pointer :: fabd_sun(:,:)           !flux absorbed by sunlit canopy per unit direct flux  (numrad)
-   real(r8), pointer :: fabd_sha(:,:)           !flux absorbed by shaded canopy per unit direct flux  (numrad)
-   real(r8), pointer :: fabi(:,:)               !flux absorbed by canopy per unit diffuse flux        (numrad)
-   real(r8), pointer :: fabi_sun(:,:)           !flux absorbed by sunlit canopy per unit diffuse flux (numrad)
-   real(r8), pointer :: fabi_sha(:,:)           !flux absorbed by shaded canopy per unit diffuse flux (numrad)
-   real(r8), pointer :: ftdd(:,:)               !down direct flux below canopy per unit direct flx    (numrad)
-   real(r8), pointer :: ftid(:,:)               !down diffuse flux below canopy per unit direct flx   (numrad)
-   real(r8), pointer :: ftii(:,:)               !down diffuse flux below canopy per unit diffuse flx  (numrad)
-   real(r8), pointer :: vcmaxcintsun(:)         ! leaf to canopy scaling coefficient, sunlit leaf vcmax
-   real(r8), pointer :: vcmaxcintsha(:)         ! leaf to canopy scaling coefficient, shaded leaf vcmax
-   integer , pointer :: ncan(:)                 !number of canopy layers
-   integer , pointer :: nrad(:)                 !number of canopy layers, above snow for radiative transfer
-   real(r8), pointer :: fabd_sun_z(:,:)         !absorbed sunlit leaf direct  PAR (per unit lai+sai) for each canopy layer
-   real(r8), pointer :: fabd_sha_z(:,:)         !absorbed shaded leaf direct  PAR (per unit lai+sai) for each canopy layer
-   real(r8), pointer :: fabi_sun_z(:,:)         !absorbed sunlit leaf diffuse PAR (per unit lai+sai) for each canopy layer
-   real(r8), pointer :: fabi_sha_z(:,:)         !absorbed shaded leaf diffuse PAR (per unit lai+sai) for each canopy layer
-   real(r8), pointer :: fsun_z(:,:)             !sunlit fraction of canopy layer
-   real(r8), pointer :: tlai_z(:,:)             !tlai increment for canopy layer
-   real(r8), pointer :: tsai_z(:,:)             !tsai increment for canopy layer
+   real(r8), pointer :: albd(:,:)               !surface albedo (direct)                       (numrad)
+   real(r8), pointer :: albi(:,:)               !surface albedo (indirect)                      (numrad)
+   real(r8), pointer :: fabd(:,:)               !flux absorbed by veg per unit direct flux     (numrad)
+   real(r8), pointer :: fabi(:,:)               !flux absorbed by veg per unit diffuse flux    (numrad)
+   real(r8), pointer :: ftdd(:,:)               !down direct flux below veg per unit dir flx   (numrad)
+   real(r8), pointer :: ftid(:,:)               !down diffuse flux below veg per unit dir flx  (numrad)
+   real(r8), pointer :: ftii(:,:)               !down diffuse flux below veg per unit dif flx  (numrad)
    real(r8), pointer :: u10(:)                  !10-m wind (m/s) (for dust model)
    real(r8), pointer :: u10_clm(:)              !10-m wind (m/s)
    real(r8), pointer :: va(:)                   !atmospheric wind speed plus convective velocity (m/s)
    real(r8), pointer :: ram1(:)                 !aerodynamical resistance (s/m)
-   real(r8), pointer :: ram1_lake(:)            !aerodynamical resistance (s/m)
-   integer , pointer :: burndate(:)             ! crop burn date
-   real(r8), pointer :: rh_leaf(:)              !fractional humidity at leaf surface (dimensionless)
-   real(r8), pointer :: rhaf(:)                 !fractional humidity of canopy air (dimensionless)
    real(r8), pointer :: fv(:)                   !friction velocity (m/s) (for dust model)
    real(r8), pointer :: forc_hgt_u_pft(:)       !wind forcing height (10m+z0m+d) (m)
    real(r8), pointer :: forc_hgt_t_pft(:)       !temperature forcing height (10m+z0m+d) (m)
    real(r8), pointer :: forc_hgt_q_pft(:)       !specific humidity forcing height (10m+z0m+d) (m)
-   real(r8), pointer :: lfpftd(:)               ! decrease of pft weight (0-1) on the column for the timestep added by F. Li and S. Levis
    ! Variables for prognostic crop model
    real(r8), pointer :: hdidx(:)                ! cold hardening index?
    real(r8), pointer :: cumvd(:)                ! cumulative vernalization d?ependence?
@@ -242,6 +211,23 @@ type, public :: pft_pstate_type
    integer , pointer :: idop(:)                 ! date of planting
    integer , pointer :: peaklai(:)              ! 1: max allowed lai; 0: not at max
    real(r8), pointer :: vds(:)                  !deposition velocity term (m/s) (for dry dep SO4, NH4NO3)
+   ! new variables for CN code
+   real(r8), pointer :: slasun(:)     !specific leaf area for sunlit canopy, projected area basis (m^2/gC)
+   real(r8), pointer :: slasha(:)     !specific leaf area for shaded canopy, projected area basis (m^2/gC)
+   real(r8), pointer :: lncsun(:)     !leaf N concentration per unit projected LAI (gN leaf/m^2)
+   real(r8), pointer :: lncsha(:)     !leaf N concentration per unit projected LAI (gN leaf/m^2)
+   real(r8), pointer :: vcmxsun(:)    !sunlit leaf Vcmax (umolCO2/m^2/s)
+   real(r8), pointer :: vcmxsha(:)    !shaded leaf Vcmax (umolCO2/m^2/s)
+   real(r8), pointer :: gdir(:)       !leaf projection in solar direction (0 to 1)
+   real(r8), pointer :: omega(:,:)    !fraction of intercepted radiation that is scattered (0 to 1)
+   real(r8), pointer :: eff_kid(:,:)  !effective extinction coefficient for indirect from direct
+   real(r8), pointer :: eff_kii(:,:)  !effective extinction coefficient for indirect from indirect
+   real(r8), pointer :: sun_faid(:,:) !fraction sun canopy absorbed indirect from direct
+   real(r8), pointer :: sun_faii(:,:) !fraction sun canopy absorbed indirect from indirect
+   real(r8), pointer :: sha_faid(:,:) !fraction shade canopy absorbed indirect from direct
+   real(r8), pointer :: sha_faii(:,:) !fraction shade canopy absorbed indirect from indirect
+   real(r8), pointer :: cisun(:)       !sunlit intracellular CO2 (Pa)
+   real(r8), pointer :: cisha(:)       !shaded intracellular CO2 (Pa)
    real(r8), pointer :: alphapsnsun(:) !sunlit 13c fractionation ([])
    real(r8), pointer :: alphapsnsha(:) !shaded 13c fractionation ([])
    real(r8), pointer :: sandfrac(:)    ! sand fraction
@@ -250,47 +236,10 @@ type, public :: pft_pstate_type
    real(r8), pointer :: mlaidiff(:)    ! difference between lai month one and month two
    real(r8), pointer :: rb1(:)         ! aerodynamical resistance (s/m)
    real(r8), pointer :: annlai(:,:)    ! 12 months of monthly lai from input data set  
-
-   ! New variable for methane code
-   real(r8), pointer :: grnd_ch4_cond(:)    !tracer conductance for boundary layer [m/s]
-   real(r8), pointer :: canopy_cond(:)    !tracer conductance for canopy [m/s]
-
-   ! and vertical profiles for calculating fluxes
-   real(r8), pointer :: leaf_prof(:,:)          ! (1/m) profile of leaves
-   real(r8), pointer :: froot_prof(:,:)         ! (1/m) profile of fine roots
-   real(r8), pointer :: croot_prof(:,:)         ! (1/m) profile of coarse roots
-   real(r8), pointer :: stem_prof(:,:)          ! (1/m) profile of stems
 end type pft_pstate_type
 
 type(pft_pstate_type) :: pps      !physical state variables
 type(pft_pstate_type) :: pps_a    !pft-level pstate variables averaged to the column
-
-!----------------------------------------------------
-! pft photosynthesis structure
-!----------------------------------------------------
-
-type, public :: pft_psynstate_type
-   logical, pointer :: c3flag(:)                 ! true if C3 and false if C4
-   real(r8), pointer :: ac(:,:)                  ! Rubisco-limited gross photosynthesis (umol CO2/m**2/s)
-   real(r8), pointer :: aj(:,:)                  ! RuBP-limited gross photosynthesis (umol CO2/m**2/s)
-   real(r8), pointer :: ap(:,:)                  ! product-limited (C3) or CO2-limited (C4) gross photosynthesis (umol CO2/m**2/s)
-   real(r8), pointer :: ag(:,:)                  ! co-limited gross leaf photosynthesis (umol CO2/m**2/s)
-   real(r8), pointer :: an(:,:)                  ! net leaf photosynthesis (umol CO2/m**2/s)   
-   real(r8), pointer :: vcmax_z(:,:)             ! maximum rate of carboxylation (umol co2/m**2/s)
-   real(r8), pointer :: cp(:)                    ! CO2 compensation point (Pa)
-   real(r8), pointer :: kc(:)                    ! Michaelis-Menten constant for CO2 (Pa)
-   real(r8), pointer :: ko(:)                    ! Michaelis-Menten constant for O2 (Pa)
-   real(r8), pointer :: qe(:)                    ! quantum efficiency, used only for C4 (mol CO2 / mol photons)
-   real(r8), pointer :: tpu_z(:,:)               ! triose phosphate utilization rate (umol CO2/m**2/s)
-   real(r8), pointer :: kp_z(:,:)                ! initial slope of CO2 response curve (C4 plants)
-   real(r8), pointer :: theta_cj(:)              ! empirical curvature parameter for ac, aj photosynthesis co-limitation
-   real(r8), pointer :: bbb(:)                   ! Ball-Berry minimum leaf conductance (umol H2O/m**2/s)
-   real(r8), pointer :: mbb(:)                   ! Ball-Berry slope of conductance-photosynthesis relationship
-   real(r8), pointer :: gs_mol(:,:)              ! leaf stomatal conductance (umol H2O/m**2/s)
-   real(r8), pointer :: gb_mol(:)                ! leaf boundary layer conductance (umol H2O/m**2/s)
-end type pft_psynstate_type
-
-type(pft_psynstate_type)::ppsyns     !photosynthesis relevant variables
 
 !----------------------------------------------------
 ! pft ecophysiological constants structure
@@ -304,6 +253,8 @@ type, public :: pft_epc_type
    real(r8), pointer :: foln(:)                 !foliage nitrogen (%)
    real(r8), pointer :: dleaf(:)                !characteristic leaf dimension (m)
    real(r8), pointer :: c3psn(:)                !photosynthetic pathway: 0. = c4, 1. = c3
+   real(r8), pointer :: mp(:)                   !slope of conductance-to-photosynthesis relationship
+   real(r8), pointer :: qe25(:)                 !quantum efficiency at 25C (umol CO2 / umol photon)
    real(r8), pointer :: xl(:)                   !leaf/stem orientation index
    real(r8), pointer :: rhol(:,:)               !leaf reflectance: 1=vis, 2=nir   (numrad)
    real(r8), pointer :: rhos(:,:)               !stem reflectance: 1=vis, 2=nir   (numrad)
@@ -313,6 +264,7 @@ type, public :: pft_epc_type
    real(r8), pointer :: displar(:)              !ratio of displacement height to canopy top height (-)
    real(r8), pointer :: roota_par(:)            !CLM rooting distribution parameter [1/m]
    real(r8), pointer :: rootb_par(:)            !CLM rooting distribution parameter [1/m]
+   real(r8), pointer :: sla(:)                  !specific leaf area [m2 leaf g-1 carbon]
    ! new variables for CN code
    real(r8), pointer :: dwood(:)           !wood density (gC/m3)
    real(r8), pointer :: slatop(:)    !specific leaf area at top of canopy, projected area basis [m^2/gC]
@@ -340,60 +292,11 @@ type, public :: pft_epc_type
    real(r8), pointer :: evergreen(:)    !binary flag for evergreen leaf habit (0 or 1)
    real(r8), pointer :: stress_decid(:) !binary flag for stress-deciduous leaf habit (0 or 1)
    real(r8), pointer :: season_decid(:) !binary flag for seasonal-deciduous leaf habit (0 or 1)
-
-!  fire variables added by F. Li and S. Levis
-    
-  ! combustion completeness factors (0 to 1)
-   real(r8), pointer :: cc_leaf(:)        !combustion completeness factor for leaf
-   real(r8), pointer :: cc_lstem(:)       !combustion completeness factor for live stem
-   real(r8), pointer :: cc_dstem(:)       !combustion completeness factor for dead stem
-   real(r8), pointer :: cc_other(:)       !combustion completeness factor for other plant tissues
- !  mortality factors (0 to 1)
-   real(r8), pointer :: fm_leaf(:)        !fire-related mortality factor for leaf
-   real(r8), pointer :: fm_lstem(:)       !fire-related mortality factor for live stem
-   real(r8), pointer :: fm_dstem(:)       !fire-related mortality factor for dead stem
-   real(r8), pointer :: fm_other(:)       !fire-related mortality factor for other plant tissues
-   real(r8), pointer :: fm_root(:)        !fire-related mortality factor for fine roots 
-   real(r8), pointer :: fm_lroot(:)       !fire-related mortality factor for live roots
-   real(r8), pointer :: fm_droot(:)       !fire-related mortality factor for dead roots
-
-   real(r8), pointer :: rootprof_beta(:)            !CLM rooting distribution parameter for C and N inputs [unitless]
-   ! new variables for crop code
-   real(r8), pointer :: fertnitro(:)    ! fertilizer applied
-   real(r8), pointer :: fleafcn(:)      ! C:N during grain fill; leaf
-   real(r8), pointer :: ffrootcn(:)     ! C:N during grain fill; froot
-   real(r8), pointer :: fstemcn(:)      ! C:N during grain fill; stem
+   ! new variables for fire code
+   real(r8), pointer :: resist(:)       !resistance to fire (no units)
 end type pft_epc_type
 
 type(pft_epc_type), public, target, save :: pftcon
-
-!----------------------------------------------------
-! decomp cascade structure
-!----------------------------------------------------
-
-type, public :: decomp_cascade_type
-   !-- properties of each pathway along decomposition cascade 
-   character(len=8), pointer :: cascade_step_name(:)      ! name of transition
-   integer,  pointer :: cascade_donor_pool(:)             ! which pool is C taken from for a given decomposition step
-   integer,  pointer :: cascade_receiver_pool(:)          ! which pool is C added to for a given decomposition step
-   !-- properties of each decomposing pool
-   logical,  pointer :: floating_cn_ratio_decomp_pools(:) ! TRUE => pool has fixed C:N ratio
-   character(len=8), pointer :: decomp_pool_name_restart(:)       ! name of pool for restart files
-   character(len=8), pointer :: decomp_pool_name_history(:)       ! name of pool for history files
-   character(len=20), pointer :: decomp_pool_name_long(:)       ! name of pool for netcdf long names
-   character(len=8), pointer :: decomp_pool_name_short(:)       ! name of pool for netcdf short names
-   logical, pointer :: is_litter(:)                       ! TRUE => pool is a litter pool
-   logical, pointer :: is_soil(:)                         ! TRUE => pool is a soil pool
-   logical, pointer :: is_cwd(:)                          ! TRUE => pool is a cwd pool
-   real(r8), pointer :: initial_cn_ratio(:)               ! c:n ratio for initialization of pools
-   real(r8), pointer :: initial_stock(:)                  ! initial concentration for seeding at spinup
-   logical, pointer :: is_metabolic(:)                       ! TRUE => pool is metabolic material
-   logical, pointer :: is_cellulose(:)                       ! TRUE => pool is cellulose
-   logical, pointer :: is_lignin(:)                          ! TRUE => pool is lignin
-   real(r8), pointer :: spinup_factor(:)                  ! factor by which to scale AD and relevant processes by
-end type decomp_cascade_type
-
-type(decomp_cascade_type), public, target, save :: decomp_cascade_con
 
 !----------------------------------------------------
 ! pft DGVM-specific ecophysiological constants structure
@@ -428,8 +331,6 @@ type, public :: pft_epv_type
    real(r8), pointer :: offset_counter(:)       !offset days counter
    real(r8), pointer :: offset_fdd(:)           !offset freezing degree days counter
    real(r8), pointer :: offset_swi(:)           !offset soil water index
-   real(r8), pointer :: fert_counter(:)         !>0 fertilize; <=0 not
-   real(r8), pointer :: grain_flag(:)           !1: grain fill stage; 0: not
    real(r8), pointer :: lgsf(:)                 !long growing season factor [0-1]
    real(r8), pointer :: bglfr(:)                !background litterfall rate (1/s)
    real(r8), pointer :: bgtr(:)                 !background transfer growth rate (1/s)
@@ -458,14 +359,11 @@ type, public :: pft_epv_type
    real(r8), pointer :: prev_frootc_to_litter(:)!previous timestep froot C litterfall flux (gC/m2/s)
    real(r8), pointer :: tempsum_npp(:)          !temporary annual sum of NPP (gC/m2/yr)
    real(r8), pointer :: annsum_npp(:)           !annual sum of NPP (gC/m2/yr)
-   !CNDV
    real(r8), pointer :: tempsum_litfall(:)      !temporary annual sum of litfall (gC/m2/yr)
    real(r8), pointer :: annsum_litfall(:)       !annual sum of litfall (gC/m2/yr)
-   !
    real(r8), pointer :: rc13_canair(:)          !C13O2/C12O2 in canopy air
    real(r8), pointer :: rc13_psnsun(:)          !C13O2/C12O2 in sunlit canopy psn flux
    real(r8), pointer :: rc13_psnsha(:)          !C13O2/C12O2 in shaded canopy psn flux
-   real(r8), pointer :: rc14_atm(:)             !C14O2/C12O2 in atmosphere
 end type pft_epv_type                        
 
 type(pft_epv_type)    :: pepv        !pft ecophysiological variables
@@ -490,8 +388,8 @@ type, public :: pft_estate_type
    real(r8), pointer :: t_ref2m_min_inst_r(:) !Rural instantaneous daily min of average 2 m height surface air temp (K)
    real(r8), pointer :: t_ref2m_max_inst_u(:) !Urban instantaneous daily max of average 2 m height surface air temp (K)
    real(r8), pointer :: t_ref2m_max_inst_r(:) !Rural instantaneous daily max of average 2 m height surface air temp (K)
-   real(r8), pointer :: a10tmin(:)            !10-day running mean of min 2-m temperature
-   real(r8), pointer :: a5tmin(:)             !5-day running mean of min 2-m temperature
+   real(r8), pointer :: a10tmin(:)            ! 10-day running mean of min 2-m temperature
+   real(r8), pointer :: a5tmin(:)             ! 5-day running mean of min 2-m temperature
    real(r8), pointer :: t10(:)                !10-day running mean of the 2 m temperature (K)
    real(r8), pointer :: rh_ref2m(:)           !2 m height surface relative humidity (%)
    real(r8), pointer :: rh_ref2m_u(:)         !Urban 2 m height surface relative humidity (%)
@@ -549,17 +447,13 @@ type, public :: pft_cstate_type
    real(r8), pointer :: storvegc(:)           ! (gC/m2) stored vegetation carbon, excluding cpool
    real(r8), pointer :: totvegc(:)            ! (gC/m2) total vegetation carbon, excluding cpool
    real(r8), pointer :: totpftc(:)            ! (gC/m2) total pft-level carbon, including cpool
-   ! CN
    real(r8), pointer :: woodc(:)              ! (gC/m2) wood C
-   !
 end type pft_cstate_type
 
-type(pft_cstate_type), target :: pcs         !pft carbon state
-type(pft_cstate_type), target :: pcs_a       !pft-level carbon state averaged to the column
-type(pft_cstate_type), target :: pc13s       !pft carbon-13 state 
-type(pft_cstate_type), target :: pc13s_a     !pft carbon-13 state averaged to the column
-type(pft_cstate_type), target :: pc14s       !pft carbon-14 state 
-type(pft_cstate_type), target :: pc14s_a     !pft carbon-14 state averaged to the column
+type(pft_cstate_type) :: pcs         !pft carbon state
+type(pft_cstate_type) :: pcs_a       !pft-level carbon state averaged to the column
+type(pft_cstate_type) :: pc13s       !pft carbon-13 state 
+type(pft_cstate_type) :: pc13s_a     !pft carbon-13 state averaged to the column
 
 !----------------------------------------------------
 ! pft nitrogen state variables structure
@@ -598,8 +492,7 @@ type, public :: pft_nstate_type
    real(r8), pointer :: totpftn(:)            ! (gN/m2) total pft-level nitrogen
 end type pft_nstate_type
 
-type(pft_nstate_type) :: pns      !pft nitrogen state
-type(pft_nstate_type) :: pns_a    !pft-level nitrogen state variables averaged to the column
+type(pft_nstate_type) :: pns         !pft nitrogen state
 
 !----------------------------------------------------
 ! pft VOC state variables structure
@@ -646,17 +539,14 @@ type(pft_dgvstate_type) :: pdgvs     !pft DGVM state variables
 ! pft energy flux variables structure
 !----------------------------------------------------
 type, public :: pft_eflux_type
-   real(r8), pointer :: sabg_soil(:)         !solar radiation absorbed by soil (W/m**2)
-   real(r8), pointer :: sabg_snow(:)         !solar radiation absorbed by snow (W/m**2)
-   real(r8), pointer :: sabg_chk(:)          !fsno weighted sum (needed by balancecheck, because fsno changes midway)
    real(r8), pointer :: sabg(:)              !solar radiation absorbed by ground (W/m**2)
    real(r8), pointer :: sabv(:)              !solar radiation absorbed by vegetation (W/m**2)
    real(r8), pointer :: fsa(:)               !solar radiation absorbed (total) (W/m**2)
    real(r8), pointer :: fsa_u(:)             !urban solar radiation absorbed (total) (W/m**2)
    real(r8), pointer :: fsa_r(:)             !rural solar radiation absorbed (total) (W/m**2)
    real(r8), pointer :: fsr(:)               !solar radiation reflected (W/m**2)
-   real(r8), pointer :: parsun_z(:,:)        !absorbed PAR for sunlit leaves in canopy layer (W/m**2)
-   real(r8), pointer :: parsha_z(:,:)        !absorbed PAR for shaded leaves in canopy layer (W/m**2)
+   real(r8), pointer :: parsun(:)            !average absorbed PAR for sunlit leaves (W/m**2)
+   real(r8), pointer :: parsha(:)            !average absorbed PAR for shaded leaves (W/m**2)
    real(r8), pointer :: dlrad(:)             !downward longwave radiation below the canopy [W/m2]
    real(r8), pointer :: ulrad(:)             !upward longwave radiation above the canopy [W/m2]
    real(r8), pointer :: eflx_lh_tot(:)       !total latent heat flux (W/m**2)  [+ to atm]
@@ -670,9 +560,6 @@ type, public :: pft_eflux_type
    real(r8), pointer :: eflx_sh_tot_u(:)     !urban total sensible heat flux (W/m**2) [+ to atm]
    real(r8), pointer :: eflx_sh_tot_r(:)     !rural total sensible heat flux (W/m**2) [+ to atm]
    real(r8), pointer :: eflx_sh_grnd(:)      !sensible heat flux from ground (W/m**2) [+ to atm]
-   real(r8), pointer :: eflx_sh_snow(:)      !sensible heat flux from snow (W/m**2) [+ to atm]
-   real(r8), pointer :: eflx_sh_soil(:)      !sensible heat flux from soil (W/m**2) [+ to atm]
-   real(r8), pointer :: eflx_sh_h2osfc(:)    !sensible heat flux from surface water (W/m**2) [+ to atm]
    real(r8), pointer :: eflx_sh_veg(:)       !sensible heat flux from leaves (W/m**2) [+ to atm]
    real(r8), pointer :: eflx_lh_vege(:)      !veg evaporation heat flux (W/m**2) [+ to atm]
    real(r8), pointer :: eflx_lh_vegt(:)      !veg transpiration heat flux (W/m**2) [+ to atm]
@@ -684,8 +571,6 @@ type, public :: pft_eflux_type
    real(r8), pointer :: cgrndl(:)            !deriv. of soil latent heat flux wrt soil temp [w/m**2/k]
    real(r8), pointer :: cgrnds(:)            !deriv. of soil sensible heat flux wrt soil temp [w/m2/k]
    real(r8), pointer :: eflx_gnet(:)         !net heat flux into ground (W/m**2)
-! New lake field
-   real(r8), pointer :: eflx_grnd_lake(:)    !net heat flux into lake / snow surface, excluding light transmission (W/m**2)
    real(r8), pointer :: dgnetdT(:)           !derivative of net ground heat flux wrt soil temp (W/m**2 K)
    real(r8), pointer :: eflx_lwrad_out(:)    !emitted infrared (longwave) radiation (W/m**2)
    real(r8), pointer :: eflx_lwrad_net(:)    !net infrared (longwave) rad (W/m**2) [+ = to atm]
@@ -701,13 +586,22 @@ type, public :: pft_eflux_type
    real(r8), pointer :: fsr_vis_i(:)         !reflected diffuse vis solar radiation (W/m**2)
    real(r8), pointer :: fsr_nir_i(:)         !reflected diffuse nir solar radiation (W/m**2)
    real(r8), pointer :: fsds_vis_d_ln(:)     !incident direct beam vis solar radiation at local noon (W/m**2)
-   real(r8), pointer :: fsds_vis_i_ln(:)     !incident diffuse beam vis solar radiation at local noon (W/m**2)
-   real(r8), pointer :: parveg_ln(:)         !absorbed par by vegetation at local noon (W/m**2)
    real(r8), pointer :: fsds_nir_d_ln(:)     !incident direct beam nir solar radiation at local noon (W/m**2)
    real(r8), pointer :: fsr_vis_d_ln(:)      !reflected direct beam vis solar radiation at local noon (W/m**2)
    real(r8), pointer :: fsr_nir_d_ln(:)      !reflected direct beam nir solar radiation at local noon (W/m**2)
+   real(r8), pointer :: sun_add(:,:)      !sun canopy absorbed direct from direct (W/m**2)
+   real(r8), pointer :: tot_aid(:,:)      !total canopy absorbed indirect from direct (W/m**2)
+   real(r8), pointer :: sun_aid(:,:)      !sun canopy absorbed indirect from direct (W/m**2)
+   real(r8), pointer :: sun_aii(:,:)      !sun canopy absorbed indirect from indirect (W/m**2)
+   real(r8), pointer :: sha_aid(:,:)      !shade canopy absorbed indirect from direct (W/m**2)
+   real(r8), pointer :: sha_aii(:,:)      !shade canopy absorbed indirect from indirect (W/m**2)
+   real(r8), pointer :: sun_atot(:,:)     !sun canopy total absorbed (W/m**2)
+   real(r8), pointer :: sha_atot(:,:)     !shade canopy total absorbed (W/m**2)
+   real(r8), pointer :: sun_alf(:,:)      !sun canopy total absorbed by leaves (W/m**2)
+   real(r8), pointer :: sha_alf(:,:)      !shade canopy total absored by leaves (W/m**2)
+   real(r8), pointer :: sun_aperlai(:,:)  !sun canopy total absorbed per unit LAI (W/m**2)
+   real(r8), pointer :: sha_aperlai(:,:)  !shade canopy total absorbed per unit LAI (W/m**2)
    real(r8), pointer :: sabg_lyr(:,:)     ! absorbed radiation in each snow layer and top soil layer (pft,lyr) [W/m2]
-   real(r8), pointer :: sabg_pen(:)       ! (rural) shortwave radiation penetrating top soisno layer [W/m2]
    real(r8), pointer :: sfc_frc_aer(:)    ! surface forcing of snow with all aerosols (pft) [W/m2]
    real(r8), pointer :: sfc_frc_bc(:)     ! surface forcing of snow with BC (pft) [W/m2]
    real(r8), pointer :: sfc_frc_oc(:)     ! surface forcing of snow with OC (pft) [W/m2]
@@ -757,9 +651,6 @@ type, public :: pft_wflux_type
    real(r8), pointer :: qflx_dew_grnd(:)  !ground surface dew formation (mm H2O /s) [+]
    real(r8), pointer :: qflx_sub_snow(:)  !sublimation rate from snow pack (mm H2O /s) [+]
    real(r8), pointer :: qflx_dew_snow(:)  !surface dew added to snow pack (mm H2O /s) [+]
-   real(r8), pointer :: qflx_ev_snow(:)   !snow evaporation (mm H2O/s) (+ = to atm)
-   real(r8), pointer :: qflx_ev_soil(:)   !soil evaporation (mm H2O/s) (+ = to atm)
-   real(r8), pointer :: qflx_ev_h2osfc(:) !h2osfc evaporation (mm H2O/s) (+ = to atm)
 end type pft_wflux_type
 
 type(pft_wflux_type)  :: pwf         !pft water flux
@@ -770,25 +661,8 @@ type(pft_wflux_type)  :: pwf         !pft water flux
 type, public :: pft_cflux_type
    real(r8), pointer :: psnsun(:)         !sunlit leaf photosynthesis (umol CO2 /m**2/ s)
    real(r8), pointer :: psnsha(:)         !shaded leaf photosynthesis (umol CO2 /m**2/ s)
-   real(r8), pointer :: psnsun_z(:,:)     !canopy layer: sunlit leaf photosynthesis (umol CO2 /m**2/ s)
-   real(r8), pointer :: psnsha_z(:,:)     !canopy layer: shaded leaf photosynthesis (umol CO2 /m**2/ s)
-   real(r8), pointer :: cisun_z(:,:)      !intracellular sunlit leaf CO2 (Pa)
-   real(r8), pointer :: cisha_z(:,:)      !intracellular shaded leaf CO2 (Pa)
-   real(r8), pointer :: lmrsun(:)         !sunlit leaf maintenance respiration rate (umol CO2/m**2/s)
-   real(r8), pointer :: lmrsha(:)         !shaded leaf maintenance respiration rate (umol CO2/m**2/s)
-   real(r8), pointer :: lmrsun_z(:,:)     !canopy layer: sunlit leaf maintenance respiration rate (umol CO2/m**2/s)
-   real(r8), pointer :: lmrsha_z(:,:)     !canopy layer: shaded leaf maintenance respiration rate (umol CO2/m**2/s)
    real(r8), pointer :: fpsn(:)           !photosynthesis (umol CO2 /m**2 /s)
    real(r8), pointer :: fco2(:)           !net CO2 flux (umol CO2 /m**2 /s) [+ = to atm]
-   real(r8), pointer :: psnsun_wc(:)      !Rubsico-limited sunlit leaf photosynthesis (umol CO2 /m**2/ s)
-   real(r8), pointer :: psnsha_wc(:)      !Rubsico-limited shaded leaf photosynthesis (umol CO2 /m**2/ s)
-   real(r8), pointer :: fpsn_wc(:)        !Rubisco-limited photosynthesis (umol CO2 /m**2 /s)
-   real(r8), pointer :: psnsun_wj(:)      !RuBP-limited sunlit leaf photosynthesis (umol CO2 /m**2/ s)
-   real(r8), pointer :: psnsha_wj(:)      !RuBP-limited shaded leaf photosynthesis (umol CO2 /m**2/ s)
-   real(r8), pointer :: fpsn_wj(:)        !RuBP-limited photosynthesis (umol CO2 /m**2 /s)
-   real(r8), pointer :: psnsun_wp(:)      !product-limited sunlit leaf photosynthesis (umol CO2 /m**2/ s)
-   real(r8), pointer :: psnsha_wp(:)      !product-limited shaded leaf photosynthesis (umol CO2 /m**2/ s)
-   real(r8), pointer :: fpsn_wp(:)        !product-limited photosynthesis (umol CO2 /m**2 /s)
    ! new variables for CN code
    ! gap mortality fluxes
    real(r8), pointer :: m_leafc_to_litter(:)                 ! leaf C mortality (gC/m2/s)
@@ -834,51 +708,29 @@ type, public :: pft_cflux_type
    real(r8), pointer :: hrv_gresp_storage_to_litter(:)       ! growth respiration storage harvest mortality (gC/m2/s)
    real(r8), pointer :: hrv_gresp_xfer_to_litter(:)          ! growth respiration transfer harvest mortality (gC/m2/s)
    real(r8), pointer :: hrv_xsmrpool_to_atm(:)               ! excess MR pool harvest mortality (gC/m2/s)
-
-   ! PFT-level fire C fluxes added by F. Li and S. Levis
-   real(r8), pointer :: m_leafc_to_fire(:)             ! (gC/m2/s) fire C emissions from leafc 
-   real(r8), pointer :: m_leafc_storage_to_fire(:)     ! (gC/m2/s) fire C emissions from leafc_storage             
-   real(r8), pointer :: m_leafc_xfer_to_fire(:)        ! (gC/m2/s) fire C emissions from leafc_xfer
-   real(r8), pointer :: m_livestemc_to_fire(:)         ! (gC/m2/s) fire C emissions from livestemc
-   real(r8), pointer :: m_livestemc_storage_to_fire(:) ! (gC/m2/s) fire C emissions from livestemc_storage       
-   real(r8), pointer :: m_livestemc_xfer_to_fire(:)    ! (gC/m2/s) fire C emissions from livestemc_xfer
-   real(r8), pointer :: m_deadstemc_to_fire(:)         ! (gC/m2/s) fire C emissions from deadstemc_xfer
-   real(r8), pointer :: m_deadstemc_storage_to_fire(:) ! (gC/m2/s) fire C emissions from deadstemc_storage         
-   real(r8), pointer :: m_deadstemc_xfer_to_fire(:)    ! (gC/m2/s) fire C emissions from deadstemc_xfer
-   real(r8), pointer :: m_frootc_to_fire(:)            ! (gC/m2/s) fire C emissions from frootc
-   real(r8), pointer :: m_frootc_storage_to_fire(:)    ! (gC/m2/s) fire C emissions from frootc_storage
-   real(r8), pointer :: m_frootc_xfer_to_fire(:)       ! (gC/m2/s) fire C emissions from frootc_xfer
-   real(r8), pointer :: m_livecrootc_to_fire(:)        ! (gC/m2/s) fire C emissions from livecrootc
-   real(r8), pointer :: m_livecrootc_storage_to_fire(:)! (gC/m2/s) fire C emissions from livecrootc_storage     
-   real(r8), pointer :: m_livecrootc_xfer_to_fire(:)   ! (gC/m2/s) fire C emissions from livecrootc_xfer
-   real(r8), pointer :: m_deadcrootc_to_fire(:)        ! (gC/m2/s) fire C emissions from deadcrootc
-   real(r8), pointer :: m_deadcrootc_storage_to_fire(:)! (gC/m2/s) fire C emissions from deadcrootc_storage 
-   real(r8), pointer :: m_deadcrootc_xfer_to_fire(:)   ! (gC/m2/s) fire C emissions from deadcrootc_xfer
-   real(r8), pointer :: m_gresp_storage_to_fire(:)     ! (gC/m2/s) fire C emissions from gresp_storage 
-   real(r8), pointer :: m_gresp_xfer_to_fire(:)        ! (gC/m2/s) fire C emissions from gresp_xfer
-   real(r8), pointer :: m_leafc_to_litter_fire(:)      ! (gC/m2/s) from leafc to litter c due to fire
-   real(r8), pointer :: m_leafc_storage_to_litter_fire(:)  ! (gC/m2/s) from leafc_storage to litter C  due to fire               
-   real(r8), pointer :: m_leafc_xfer_to_litter_fire(:)     ! (gC/m2/s) from leafc_xfer to litter C  due to fire               
-   real(r8), pointer :: m_livestemc_to_litter_fire(:)      ! (gC/m2/s) from livestemc to litter C  due to fire               
-   real(r8), pointer :: m_livestemc_storage_to_litter_fire(:)  ! (gC/m2/s) from livestemc_storage to litter C due to fire      
-   real(r8), pointer :: m_livestemc_xfer_to_litter_fire(:) !(gC/m2/s) from livestemc_xfer to litter C due to fire      
-   real(r8), pointer :: m_livestemc_to_deadstemc_fire(:)   !(gC/m2/s) from livestemc to deadstemc due to fire       
-   real(r8), pointer :: m_deadstemc_to_litter_fire(:)      !(gC/m2/s) from deadstemc to litter C due to fire      
-   real(r8), pointer :: m_deadstemc_storage_to_litter_fire(:)  !(gC/m2/s) from deadstemc_storage to litter C due to fire               
-   real(r8), pointer :: m_deadstemc_xfer_to_litter_fire(:)     !(gC/m2/s) from deadstemc_xfer to litter C due to fire               
-   real(r8), pointer :: m_frootc_to_litter_fire(:)             !(gC/m2/s) from frootc to litter C due to fire               
-   real(r8), pointer :: m_frootc_storage_to_litter_fire(:)     !(gC/m2/s) from frootc_storage to litter C due to fire               
-   real(r8), pointer :: m_frootc_xfer_to_litter_fire(:)        !(gC/m2/s) from frootc_xfer to litter C due to fire               
-   real(r8), pointer :: m_livecrootc_to_litter_fire(:)         !(gC/m2/s) from livecrootc to litter C due to fire                     
-   real(r8), pointer :: m_livecrootc_storage_to_litter_fire(:) !(gC/m2/s) from livecrootc_storage to litter C due to fire                     
-   real(r8), pointer :: m_livecrootc_xfer_to_litter_fire(:)    !(gC/m2/s) from livecrootc_xfer to litter C due to fire                     
-   real(r8), pointer :: m_livecrootc_to_deadcrootc_fire(:)     !(gC/m2/s) from livecrootc to deadstemc due to fire        
-   real(r8), pointer :: m_deadcrootc_to_litter_fire(:)         !(gC/m2/s) from deadcrootc to litter C due to fire                       
-   real(r8), pointer :: m_deadcrootc_storage_to_litter_fire(:) !(gC/m2/s) from deadcrootc_storage to litter C due to fire                       
-   real(r8), pointer :: m_deadcrootc_xfer_to_litter_fire(:)    !(gC/m2/s) from deadcrootc_xfer to litter C due to fire                       
-   real(r8), pointer :: m_gresp_storage_to_litter_fire(:)      !(gC/m2/s) from gresp_storage to litter C due to fire                       
-   real(r8), pointer :: m_gresp_xfer_to_litter_fire(:)          !(gC/m2/s) from gresp_xfer to litter C due to fire                       
- 
+   ! PFT-level fire fluxes
+   real(r8), pointer :: m_leafc_to_fire(:)                   ! leaf C fire loss (gC/m2/s)
+   real(r8), pointer :: m_leafc_storage_to_fire(:)           ! leaf C storage fire loss (gC/m2/s)
+   real(r8), pointer :: m_leafc_xfer_to_fire(:)              ! leaf C transfer fire loss (gC/m2/s)
+   real(r8), pointer :: m_frootc_to_fire(:)                  ! fine root C fire loss (gC/m2/s)
+   real(r8), pointer :: m_frootc_storage_to_fire(:)          ! fine root C storage fire loss (gC/m2/s)
+   real(r8), pointer :: m_frootc_xfer_to_fire(:)             ! fine root C transfer fire loss (gC/m2/s)
+   real(r8), pointer :: m_livestemc_to_fire(:)               ! live stem C fire loss (gC/m2/s)
+   real(r8), pointer :: m_livestemc_storage_to_fire(:)       ! live stem C storage fire loss (gC/m2/s)
+   real(r8), pointer :: m_livestemc_xfer_to_fire(:)          ! live stem C transfer fire loss (gC/m2/s)
+   real(r8), pointer :: m_deadstemc_to_fire(:)               ! dead stem C fire loss (gC/m2/s)
+   real(r8), pointer :: m_deadstemc_to_litter_fire(:)        ! dead stem C fire mortality to litter (gC/m2/s)
+   real(r8), pointer :: m_deadstemc_storage_to_fire(:)       ! dead stem C storage fire loss (gC/m2/s)
+   real(r8), pointer :: m_deadstemc_xfer_to_fire(:)          ! dead stem C transfer fire loss (gC/m2/s)
+   real(r8), pointer :: m_livecrootc_to_fire(:)              ! live coarse root C fire loss (gC/m2/s)
+   real(r8), pointer :: m_livecrootc_storage_to_fire(:)      ! live coarse root C storage fire loss (gC/m2/s)
+   real(r8), pointer :: m_livecrootc_xfer_to_fire(:)         ! live coarse root C transfer fire loss (gC/m2/s)
+   real(r8), pointer :: m_deadcrootc_to_fire(:)              ! dead coarse root C fire loss (gC/m2/s)
+   real(r8), pointer :: m_deadcrootc_to_litter_fire(:)       ! dead coarse root C fire mortality to litter (gC/m2/s)
+   real(r8), pointer :: m_deadcrootc_storage_to_fire(:)      ! dead coarse root C storage fire loss (gC/m2/s)
+   real(r8), pointer :: m_deadcrootc_xfer_to_fire(:)         ! dead coarse root C transfer fire loss (gC/m2/s)
+   real(r8), pointer :: m_gresp_storage_to_fire(:)           ! growth respiration storage fire loss (gC/m2/s)
+   real(r8), pointer :: m_gresp_xfer_to_fire(:)              ! growth respiration transfer fire loss (gC/m2/s)
    ! phenology fluxes from transfer pools                     
    real(r8), pointer :: grainc_xfer_to_grainc(:)             ! grain C growth from storage for prognostic crop(gC/m2/s)
    real(r8), pointer :: leafc_xfer_to_leafc(:)               ! leaf C growth from storage (gC/m2/s)
@@ -897,17 +749,14 @@ type, public :: pft_cflux_type
    real(r8), pointer :: froot_mr(:)                          ! fine root maintenance respiration (gC/m2/s)
    real(r8), pointer :: livestem_mr(:)                       ! live stem maintenance respiration (gC/m2/s)
    real(r8), pointer :: livecroot_mr(:)                      ! live coarse root maintenance respiration (gC/m2/s)
-   real(r8), pointer :: grain_mr(:)                          ! crop grain or organs maint. respiration (gC/m2/s)
    real(r8), pointer :: leaf_curmr(:)                        ! leaf maintenance respiration from current GPP (gC/m2/s)
    real(r8), pointer :: froot_curmr(:)                       ! fine root maintenance respiration from current GPP (gC/m2/s)
    real(r8), pointer :: livestem_curmr(:)                    ! live stem maintenance respiration from current GPP (gC/m2/s)
    real(r8), pointer :: livecroot_curmr(:)                   ! live coarse root maintenance respiration from current GPP (gC/m2/s)
-   real(r8), pointer :: grain_curmr(:)                       ! crop grain or organs maint. respiration from current GPP (gC/m2/s)
    real(r8), pointer :: leaf_xsmr(:)                         ! leaf maintenance respiration from storage (gC/m2/s)
    real(r8), pointer :: froot_xsmr(:)                        ! fine root maintenance respiration from storage (gC/m2/s)
    real(r8), pointer :: livestem_xsmr(:)                     ! live stem maintenance respiration from storage (gC/m2/s)
    real(r8), pointer :: livecroot_xsmr(:)                    ! live coarse root maintenance respiration from storage (gC/m2/s)
-   real(r8), pointer :: grain_xsmr(:)                        ! crop grain or organs maint. respiration from storage (gC/m2/s)
    ! photosynthesis fluxes                                   
    real(r8), pointer :: psnsun_to_cpool(:)                   ! C fixation from sunlit canopy (gC/m2/s)
    real(r8), pointer :: psnshade_to_cpool(:)                 ! C fixation from shaded canopy (gC/m2/s)
@@ -981,7 +830,7 @@ type, public :: pft_cflux_type
    real(r8), pointer :: wood_harvestc(:)  ! (gC/m2/s) pft-level wood harvest (to product pools)
    real(r8), pointer :: pft_cinputs(:)    ! (gC/m2/s) pft-level carbon inputs (for balance checking)
    real(r8), pointer :: pft_coutputs(:)   ! (gC/m2/s) pft-level carbon outputs (for balance checking)
-   ! CN: CLAMP summary (diagnostic) variables, not involved in mass balance
+   ! CLAMP summary (diagnostic) variables, not involved in mass balance
    real(r8), pointer :: frootc_alloc(:)   ! (gC/m2/s) pft-level fine root C alloc
    real(r8), pointer :: frootc_loss(:)    ! (gC/m2/s) pft-level fine root C loss
    real(r8), pointer :: leafc_alloc(:)    ! (gC/m2/s) pft-level leaf C alloc
@@ -990,20 +839,12 @@ type, public :: pft_cflux_type
    real(r8), pointer :: woodc_loss(:)     ! (gC/m2/s) pft-level wood C loss
    ! new variables for fire code
    real(r8), pointer :: pft_fire_closs(:) ! (gC/m2/s) total pft-level fire C loss 
-   ! For aerenchyma calculations in CH4 code
-   real(r8), pointer :: annavg_agnpp(:)          ! (gC/m2/s) annual average aboveground NPP
-   real(r8), pointer :: annavg_bgnpp(:)          ! (gC/m2/s) annual average belowground NPP
-   real(r8), pointer :: tempavg_agnpp(:)          ! (gC/m2/s) temp. average aboveground NPP
-   real(r8), pointer :: tempavg_bgnpp(:)          ! (gC/m2/s) temp. average belowground NPP
-   !
 end type pft_cflux_type
 
-type(pft_cflux_type), target :: pcf      !pft carbon flux
-type(pft_cflux_type), target :: pcf_a    !pft carbon flux averaged to the column
-type(pft_cflux_type), target :: pc13f    !pft carbon-13 flux 
-type(pft_cflux_type), target :: pc13f_a  !pft carbon-13 flux averaged to the column
-type(pft_cflux_type), target :: pc14f    !pft carbon-14 flux 
-type(pft_cflux_type), target :: pc14f_a  !pft carbon-14 flux averaged to the column
+type(pft_cflux_type)  :: pcf      !pft carbon flux
+type(pft_cflux_type)  :: pcf_a    !pft carbon flux averaged to the column
+type(pft_cflux_type)  :: pc13f    !pft carbon-13 flux 
+type(pft_cflux_type)  :: pc13f_a  !pft carbon-13 flux averaged to the column
 
 !----------------------------------------------------
 ! pft nitrogen flux variables structure
@@ -1051,51 +892,29 @@ type, public :: pft_nflux_type
    real(r8), pointer :: hrv_livecrootn_to_litter(:)           ! live coarse root N harvest mortality (gN/m2/s)
    real(r8), pointer :: hrv_deadcrootn_to_litter(:)           ! dead coarse root N harvest mortality (gN/m2/s)
    real(r8), pointer :: hrv_retransn_to_litter(:)             ! retranslocated N pool harvest mortality (gN/m2/s)
-
-  ! PFT-level fire N fluxes added by F. Li and S. Levis
-    real(r8), pointer :: m_leafn_to_fire(:)             ! (gN/m2/s) fire N emissions from leafn 
-   real(r8), pointer :: m_leafn_storage_to_fire(:)     ! (gN/m2/s) fire N emissions from leafn_storage            
-   real(r8), pointer :: m_leafn_xfer_to_fire(:)        ! (gN/m2/s) fire N emissions from leafn_xfer     
-   real(r8), pointer :: m_livestemn_to_fire(:)         ! (gN/m2/s) fire N emissions from livestemn 
-   real(r8), pointer :: m_livestemn_storage_to_fire(:) ! (gN/m2/s) fire N emissions from livestemn_storage      
-   real(r8), pointer :: m_livestemn_xfer_to_fire(:)    ! (gN/m2/s) fire N emissions from livestemn_xfer
-   real(r8), pointer :: m_deadstemn_to_fire(:)         ! (gN/m2/s) fire N emissions from deadstemn
-   real(r8), pointer :: m_deadstemn_storage_to_fire(:) ! (gN/m2/s) fire N emissions from deadstemn_storage         
-   real(r8), pointer :: m_deadstemn_xfer_to_fire(:)    ! (gN/m2/s) fire N emissions from deadstemn_xfer
-   real(r8), pointer :: m_frootn_to_fire(:)            ! (gN/m2/s) fire N emissions from frootn
-   real(r8), pointer :: m_frootn_storage_to_fire(:)    ! (gN/m2/s) fire N emissions from frootn_storage
-   real(r8), pointer :: m_frootn_xfer_to_fire(:)       ! (gN/m2/s) fire N emissions from frootn_xfer
-   real(r8), pointer :: m_livecrootn_to_fire(:)        ! (gN/m2/s) fire N emissions from m_livecrootn_to_fire
-   real(r8), pointer :: m_livecrootn_storage_to_fire(:)! (gN/m2/s) fire N emissions from livecrootn_storage     
-   real(r8), pointer :: m_livecrootn_xfer_to_fire(:)   ! (gN/m2/s) fire N emissions from livecrootn_xfer
-   real(r8), pointer :: m_deadcrootn_to_fire(:)        ! (gN/m2/s) fire N emissions from deadcrootn
-   real(r8), pointer :: m_deadcrootn_storage_to_fire(:)! (gN/m2/s) fire N emissions from deadcrootn_storage  
-   real(r8), pointer :: m_deadcrootn_xfer_to_fire(:)   ! (gN/m2/s) fire N emissions from deadcrootn_xfer
-   real(r8), pointer :: m_retransn_to_fire(:)          ! (gN/m2/s) fire N emissions from retransn
-  real(r8), pointer :: m_leafn_to_litter_fire(:)       ! (gN/m2/s) from leafn to litter N  due to fire               
-   real(r8), pointer :: m_leafn_storage_to_litter_fire(:) ! (gN/m2/s) from leafn_storage to litter N  due to fire                              
-   real(r8), pointer :: m_leafn_xfer_to_litter_fire(:)    ! (gN/m2/s) from leafn_xfer to litter N  due to fire                              
-   real(r8), pointer :: m_livestemn_to_litter_fire(:)      ! (gN/m2/s) from livestemn to litter N  due to fire                              
-   real(r8), pointer :: m_livestemn_storage_to_litter_fire(:) ! (gN/m2/s) from livestemn_storage to litter N  due to fire                                     
-   real(r8), pointer :: m_livestemn_xfer_to_litter_fire(:)    ! (gN/m2/s) from livestemn_xfer to litter N  due to fire                                     
-   real(r8), pointer :: m_livestemn_to_deadstemn_fire(:)      ! (gN/m2/s) from livestemn to deadstemn N  due to fire                                     
-   real(r8), pointer :: m_deadstemn_to_litter_fire(:)         ! (gN/m2/s) from deadstemn to litter N  due to fire                                     
-   real(r8), pointer :: m_deadstemn_storage_to_litter_fire(:) ! (gN/m2/s) from deadstemn_storage to litter N  due to fire                                               
-   real(r8), pointer :: m_deadstemn_xfer_to_litter_fire(:)    ! (gN/m2/s) from deadstemn_xfer to litter N  due to fire                                               
-   real(r8), pointer :: m_frootn_to_litter_fire(:)            ! (gN/m2/s) from frootn to litter N  due to fire                                               
-   real(r8), pointer :: m_frootn_storage_to_litter_fire(:)    ! (gN/m2/s) from frootn_storage to litter N  due to fire                                               
-   real(r8), pointer :: m_frootn_xfer_to_litter_fire(:)       ! (gN/m2/s) from frootn_xfer to litter N  due to fire                                               
-   real(r8), pointer :: m_livecrootn_to_litter_fire(:)        ! (gN/m2/s) from livecrootn to litter N  due to fire                                               
-   real(r8), pointer :: m_livecrootn_storage_to_litter_fire(:)! (gN/m2/s) from livecrootn_storage to litter N  due to fire                                                     
-   real(r8), pointer :: m_livecrootn_xfer_to_litter_fire(:)   ! (gN/m2/s) from livecrootn_xfer to litter N  due to fire                                                     
-   real(r8), pointer :: m_livecrootn_to_deadcrootn_fire(:)    ! (gN/m2/s) from livecrootn_xfer to deadcrootn due to fire                                                     
-   real(r8), pointer :: m_deadcrootn_to_litter_fire(:)        ! (gN/m2/s) from deadcrootn to deadcrootn due to fire                                                       
-   real(r8), pointer :: m_deadcrootn_storage_to_litter_fire(:)! (gN/m2/s) from deadcrootn_storage to deadcrootn due to fire                                                        
-   real(r8), pointer :: m_deadcrootn_xfer_to_litter_fire(:)   ! (gN/m2/s) from deadcrootn_xfer to deadcrootn due to fire                                                         
-   real(r8), pointer :: m_retransn_to_litter_fire(:)          ! (gN/m2/s) from retransn to deadcrootn due to fire                                                         
-   
-
-   ! phenology fluxes from transfer pool
+   ! fire mortality fluxes
+   real(r8), pointer :: m_leafn_to_fire(:)                  ! leaf N fire loss (gN/m2/s)
+   real(r8), pointer :: m_leafn_storage_to_fire(:)          ! leaf N storage fire loss (gN/m2/s)
+   real(r8), pointer :: m_leafn_xfer_to_fire(:)             ! leaf N transfer fire loss (gN/m2/s)
+   real(r8), pointer :: m_frootn_to_fire(:)                 ! fine root N fire loss (gN/m2/s)
+   real(r8), pointer :: m_frootn_storage_to_fire(:)         ! fine root N storage fire loss (gN/m2/s)
+   real(r8), pointer :: m_frootn_xfer_to_fire(:)            ! fine root N transfer fire loss (gN/m2/s)
+   real(r8), pointer :: m_livestemn_to_fire(:)              ! live stem N fire loss (gN/m2/s)
+   real(r8), pointer :: m_livestemn_storage_to_fire(:)      ! live stem N storage fire loss (gN/m2/s)
+   real(r8), pointer :: m_livestemn_xfer_to_fire(:)         ! live stem N transfer fire loss (gN/m2/s)
+   real(r8), pointer :: m_deadstemn_to_fire(:)              ! dead stem N fire loss (gN/m2/s)
+   real(r8), pointer :: m_deadstemn_to_litter_fire(:)       ! dead stem N fire mortality to litter (gN/m2/s)
+   real(r8), pointer :: m_deadstemn_storage_to_fire(:)      ! dead stem N storage fire loss (gN/m2/s)
+   real(r8), pointer :: m_deadstemn_xfer_to_fire(:)         ! dead stem N transfer fire loss (gN/m2/s)
+   real(r8), pointer :: m_livecrootn_to_fire(:)             ! live coarse root N fire loss (gN/m2/s)
+   real(r8), pointer :: m_livecrootn_storage_to_fire(:)     ! live coarse root N storage fire loss (gN/m2/s)
+   real(r8), pointer :: m_livecrootn_xfer_to_fire(:)        ! live coarse root N transfer fire loss (gN/m2/s)
+   real(r8), pointer :: m_deadcrootn_to_fire(:)             ! dead coarse root N fire loss (gN/m2/s)
+   real(r8), pointer :: m_deadcrootn_to_litter_fire(:)      ! dead coarse root N fire mortality to litter (gN/m2/s)
+   real(r8), pointer :: m_deadcrootn_storage_to_fire(:)     ! dead coarse root N storage fire loss (gN/m2/s)
+   real(r8), pointer :: m_deadcrootn_xfer_to_fire(:)        ! dead coarse root N transfer fire loss (gN/m2/s)
+   real(r8), pointer :: m_retransn_to_fire(:)               ! retranslocated N pool fire loss (gN/m2/s)
+   ! phenology fluxes from transfer pool                     
    real(r8), pointer :: grainn_xfer_to_grainn(:)            ! grain N growth from storage for prognostic crop model (gN/m2/s)
    real(r8), pointer :: leafn_xfer_to_leafn(:)              ! leaf N growth from storage (gN/m2/s)
    real(r8), pointer :: frootn_xfer_to_frootn(:)            ! fine root N growth from storage (gN/m2/s)
@@ -1108,7 +927,6 @@ type, public :: pft_nflux_type
    real(r8), pointer :: grainn_to_food(:)                   ! grain N to food for prognostic crop (gN/m2/s)
    real(r8), pointer :: leafn_to_litter(:)                  ! leaf N litterfall (gN/m2/s)
    real(r8), pointer :: leafn_to_retransn(:)                ! leaf N to retranslocated N pool (gN/m2/s)
-   real(r8), pointer :: frootn_to_retransn(:)               ! fine root N to retranslocated N pool (gN/m2/s)
    real(r8), pointer :: frootn_to_litter(:)                 ! fine root N litterfall (gN/m2/s)
    ! allocation fluxes
    real(r8), pointer :: retransn_to_npool(:)                ! deployment of retranslocated N (gN/m2/s)       
@@ -1135,8 +953,6 @@ type, public :: pft_nflux_type
    real(r8), pointer :: deadstemn_storage_to_xfer(:)        ! dead stem N shift storage to transfer (gN/m2/s)
    real(r8), pointer :: livecrootn_storage_to_xfer(:)       ! live coarse root N shift storage to transfer (gN/m2/s)
    real(r8), pointer :: deadcrootn_storage_to_xfer(:)       ! dead coarse root N shift storage to transfer (gN/m2/s)
-   real(r8), pointer :: fert(:)                             ! applied fertilizer (gN/m2/s)
-   real(r8), pointer :: soyfixn(:)                          ! soybean fixed N (gN/m2/s)
    ! turnover of livewood to deadwood, with retranslocation 
    real(r8), pointer :: livestemn_to_deadstemn(:)           ! live stem N turnover (gN/m2/s)
    real(r8), pointer :: livestemn_to_retransn(:)            ! live stem N to retranslocated N pool (gN/m2/s)
@@ -1228,23 +1044,11 @@ type(pft_dflux_type)  :: pdf         !pft dust flux
 type, public :: column_pstate_type
    integer , pointer :: snl(:)                !number of snow layers
    integer , pointer :: isoicol(:)            !soil color class
-
-   !F. Li and S. Levis
-   real(r8), pointer :: gdp_lf(:)             ! global real gdp data (k US$/capita)
-   real(r8), pointer :: peatf_lf(:)           ! global peatland fraction data (0-1)
-   integer , pointer :: abm_lf(:)             ! global peak month of crop fire emissions 
-   real(r8), pointer :: lgdp_col(:)           !gdp limitation factor for fire occurrence (0-1)
-   real(r8), pointer :: lgdp1_col(:)          !gdp limitation factor for fire spreading (0-1)
-   real(r8), pointer :: lpop_col(:)           !pop limitation factor for fire spreading (0-1)
-
    real(r8), pointer :: bsw(:,:)              !Clapp and Hornberger "b" (nlevgrnd)  
    real(r8), pointer :: watsat(:,:)           !volumetric soil water at saturation (porosity) (nlevgrnd) 
    real(r8), pointer :: watdry(:,:)           !btran parameter for btran=0
    real(r8), pointer :: watopt(:,:)           !btran parameter for btran = 1
    real(r8), pointer :: hksat(:,:)            !hydraulic conductivity at saturation (mm H2O /s) (nlevgrnd) 
-   real(r8), pointer :: hksat_min(:,:)        !mineral hksat
-   real(r8), pointer :: tk_hist(:,:)          !thermal conductivity
-   real(r8), pointer :: cv_hist(:,:)          !heat capacity
    real(r8), pointer :: sucsat(:,:)           !minimum soil suction (mm) (nlevgrnd) 
    real(r8), pointer :: hkdepth(:)            !decay factor (m)
    real(r8), pointer :: wtfact(:)             !maximum saturated fraction for a gridcell
@@ -1258,17 +1062,13 @@ type, public :: column_pstate_type
    real(r8), pointer :: mss_frc_cly_vld(:)    ![frc] Mass fraction clay limited to 0.20
    real(r8), pointer :: mbl_bsn_fct(:)        !basin factor
    logical , pointer :: do_capsnow(:)         !true => do snow capping
-   real(r8), pointer :: snow_depth(:)             !snow height of snow covered area (m)
-   real(r8), pointer :: snowdp(:)             ! gridcell averaged snow height (m)
+   real(r8), pointer :: snowdp(:)             !snow height (m)
    real(r8), pointer :: frac_sno(:)           !fraction of ground covered by snow (0 to 1)
-   real(r8), pointer :: frac_sno_eff(:)       !fraction of ground covered by snow (0 to 1)
-   real(r8), pointer :: frac_h2osfc(:)        !fractional area with surface water greater than zero
-   real(r8), pointer :: topo_std(:)           !gridcell topographic standard deviation (m)
-   real(r8), pointer :: topo_ndx(:)           !gridcell topographic index
-   real(r8), pointer :: topo_slope(:)         !gridcell topographic slope
-   real(r8), pointer :: micro_sigma(:)        ! microtopography pdf sigma (m)
-   real(r8), pointer :: h2osfc_thresh(:)      ! level at which h2osfc "percolates"
-   real(r8), pointer :: n_melt(:)             ! SCA shape parameter
+   !real(r8), pointer :: res_sno(:) 	      !residual snow when snl -> 0
+   !real(r8), pointer :: topo_ndx(:)           !gridcell topographic index
+   !real(r8), pointer :: topo_slope(:)         !gridcell topographic slope
+   !real(r8), pointer :: var_track(:)          !generic variable to track...
+   !real(r8), pointer :: var_track2(:)         !generic variable to track...
    real(r8), pointer :: zi(:,:)               !interface level below a "z" level (m) (-nlevsno+0:nlevgrnd) 
    real(r8), pointer :: dz(:,:)               !layer thickness (m)  (-nlevsno+1:nlevgrnd) 
    real(r8), pointer :: z(:,:)                !layer depth (m) (-nlevsno+1:nlevgrnd) 
@@ -1287,80 +1087,29 @@ type, public :: column_pstate_type
    real(r8), pointer :: rootr_column(:,:)     !effective fraction of roots in each soil layer (nlevgrnd)  
    real(r8), pointer :: rootfr_road_perv(:,:) !fraction of roots in each soil layer for urban pervious road
    real(r8), pointer :: rootr_road_perv(:,:)  !effective fraction of roots in each soil layer of urban pervious road
-
-   real(r8), pointer :: wf(:)                 !soil water as frac. of whc for top 0.05 m (0-1) (only comment changed by F. Li and S. Levis)
-   real(r8), pointer :: wf2(:)                !soil water as frac. of whc for top 0.17 m (0-1) added by F. Li and S. Levis
-
+   real(r8), pointer :: wf(:)                 !soil water as frac. of whc for top 0.5 m
 !  real(r8), pointer :: xirrig(:)             !irrigation rate
    real(r8), pointer :: max_dayl(:)           !maximum daylength for this column (s)
-   ! VICHYRDRO
-   real(r8), pointer :: b_infil(:)          !b infiltration parameter
-   real(r8), pointer :: ds(:)               !fracton of Dsmax where non-linear baseflow begins
-   real(r8), pointer :: dsmax(:)            !max. velocity of baseflow (mm/day)
-   real(r8), pointer :: Wsvic(:)            !fraction of maximum soil moisutre where non-liear base flow occurs
-   real(r8), pointer :: c_param(:)          !baseflow exponent (Qb)
-   real(r8), pointer :: expt(:,:)           !pore-size distribution related paramter(Q12)
-   real(r8), pointer :: ksat(:,:)           !Saturated hydrologic conductivity
-   real(r8), pointer :: phi_s(:,:)          !soil moisture dissusion parameter
-   real(r8), pointer :: depth(:,:)          !layer depth of upper layer 
-   real(r8), pointer :: porosity(:,:)       !soil porisity (1-bulk_density/soil_density)
-   real(r8), pointer :: max_moist(:,:)      !max layer moist + ice (mm)
-   real(r8), pointer :: vic_clm_fract(:,:,:)!fraction of VIC layers in CLM layers
    ! new variables for CN code
-   real(r8), pointer :: decl(:)               ! solar declination angle (radians)
-   real(r8), pointer :: coszen(:)             ! cosine of solar zenith angle
-   real(r8), pointer :: soilpsi(:,:)          ! soil water potential in each soil layer (MPa)
-   real(r8), pointer :: bd(:,:)               ! bulk density of dry soil material [kg/m^3]
-   real(r8), pointer :: fpi_vr(:,:)           ! fraction of potential immobilization (no units)
-   real(r8), pointer :: fpi(:)                ! fraction of potential immobilization (no units)
-   real(r8), pointer :: rf_decomp_cascade(:,:,:)              ! respired fraction in decomposition step (frac)
-   real(r8), pointer :: pathfrac_decomp_cascade(:,:,:)        ! what fraction of C leaving a given pool passes through a given transition (frac)
-   real(r8), pointer :: nfixation_prof(:,:)                   ! (1/m) profile for N fixation additions
-   real(r8), pointer :: ndep_prof(:,:)                        ! (1/m) profile for N fixation additions
-   real(r8), pointer :: alt(:)                                ! current depth of thaw
-   real(r8), pointer :: altmax(:)                             ! maximum annual depth of thaw
-   real(r8), pointer :: altmax_lastyear(:)                    ! prior year maximum annual depth of thaw
-   integer, pointer :: alt_indx(:)                            ! current depth of thaw
-   integer, pointer :: altmax_indx(:)                         ! maximum annual depth of thaw
-   integer, pointer :: altmax_lastyear_indx(:)                ! prior year maximum annual depth of thaw
-   real(r8), pointer :: som_adv_coef(:,:)                     ! SOM advective flux (m/s)
-   real(r8), pointer :: som_diffus_coef(:,:)                  ! SOM diffusivity due to bio/cryo-turbation (m2/s)
-
-   ! NITRIF_DENITRIF
-   real(r8), pointer :: tmean_monthly_max_vr(:,:)     ! maximumn monthly-mean soil temperature
-   real(r8), pointer :: tmean_monthly_vr(:,:)         ! monthly-mean soil temperature
-   !
+   real(r8), pointer :: bsw2(:,:)        !Clapp and Hornberger "b" for CN code
+   real(r8), pointer :: psisat(:,:)        !soil water potential at saturation for CN code (MPa)
+   real(r8), pointer :: vwcsat(:,:)        !volumetric water content at saturation for CN code (m3/m3)
+   real(r8), pointer :: decl(:)              ! solar declination angle (radians)
+   real(r8), pointer :: coszen(:)            !cosine of solar zenith angle
+   real(r8), pointer :: soilpsi(:,:)         !soil water potential in each soil layer (MPa)
+   real(r8), pointer :: fpi(:)           !fraction of potential immobilization (no units)
    real(r8), pointer :: fpg(:)           !fraction of potential gpp (no units)
    real(r8), pointer :: annsum_counter(:) !seconds since last annual accumulator turnover
    real(r8), pointer :: cannsum_npp(:)    !annual sum of NPP, averaged from pft-level (gC/m2/yr)
-   real(r8), pointer :: col_lag_npp(:)        ! (gC/m2/s) lagged net primary production
    real(r8), pointer :: cannavg_t2m(:)    !annual average of 2m air temperature, averaged from pft-level (K)
    real(r8), pointer :: watfc(:,:)        !volumetric soil water at field capacity (nlevsoi)
-
-   ! F. Li and S. Levis
-   real(r8), pointer :: nfire(:)        ! fire counts (count/km2/timestep), valid only in Reg. C
-   real(r8), pointer :: fsr_pft(:)      ! fire spread rate in pft level (m/s)
-   real(r8), pointer :: fsr_col(:)      ! fire spread rate at column level (m/s)
-   real(r8), pointer :: fd_col(:)       ! fire duration at column level (hr)
-   real(r8), pointer :: fd_pft(:)       ! fire duration in pft level    (hr)
-   real(r8), pointer :: prec60_col(:)              !60-day running mean of tot. precipitation (mm/s)
-   real(r8), pointer :: prec10_col(:)              !10-day running mean of tot. precipitation (mm/s)
-   real(r8), pointer :: lfc(:)         ! conversion area fraction of BET and BDT that haven't burned before (0-1)
-   real(r8), pointer :: lfc2(:)        ! conversion area fraction of BET and BDT that burned in this timestep ((timestep)-1)
-   real(r8), pointer :: dtrotr_col(:)   ! annual decreased fraction coverage of BET on the gridcell (0-1)
-   real(r8), pointer :: trotr1_col(:)   ! pft weight of BET and BDT on the gridcell(0-1)
-   real(r8), pointer :: trotr2_col(:)   ! pft weight of BDT on the gridcell (0-1)
-   real(r8), pointer :: cropf_col(:)    ! crop fraction in veg column (0-1)
-   real(r8), pointer :: baf_crop(:)     ! baf for cropland per time step(0-1)
-   real(r8), pointer :: baf_peatf(:)    ! baf for peatland per time step (0-1)
-   real(r8), pointer :: fbac(:)         ! total burned area out of conversion (0-1)
-   real(r8), pointer :: fbac1(:)        ! burned area out of conversion region due to land use fire (0-1)
-   real(r8), pointer :: btran_col(:)    ! btran2 at column level (0-1)
-   real(r8), pointer :: wtlf(:)         ! fractional coverage of non-crop PFTs (0-1)
-   real(r8), pointer :: lfwt(:)         ! fractional coverage of non-crop and non-bare-soil PFTs (0-1)
-   real(r8), pointer :: farea_burned(:)       !timestep fractional area burned (0-1) 
-
-
+   ! new variables for fire code
+   real(r8), pointer :: me(:)                 !moisture of extinction (proportion) 
+   real(r8), pointer :: fire_prob(:)          !daily fire probability (0-1) 
+   real(r8), pointer :: mean_fire_prob(:)     !e-folding mean of daily fire probability (0-1) 
+   real(r8), pointer :: fireseasonl(:)        !annual fire season length (days, <= days/year) 
+   real(r8), pointer :: farea_burned(:)       !timestep fractional area burned (proportion) 
+   real(r8), pointer :: ann_farea_burned(:)   !annual total fractional area burned (proportion)
    real(r8), pointer :: albsnd_hst(:,:)       ! snow albedo, direct, for history files (col,bnd) [frc]
    real(r8), pointer :: albsni_hst(:,:)       ! snow albedo, diffuse, for history files (col,bnd) [frc]
    real(r8), pointer :: albsod(:,:)           ! soil albedo: direct (col,bnd) [frc]
@@ -1408,27 +1157,6 @@ type, public :: column_pstate_type
    real(r8), pointer :: albgri_dst(:,:)       ! ground diffuse albedo without dust (numrad)
    real(r8), pointer :: dTdz_top(:)           ! temperature gradient in top layer  [K m-1]
    real(r8), pointer :: snot_top(:)           ! temperature of top snow layer [K]
-   ! new variables for S Lake code
-   real(r8), pointer :: ws(:)              ! surface friction velocity (m/s)
-   real(r8), pointer :: ks(:)              ! coefficient for calculation of decay of eddy diffusivity with depth
-   real(r8), pointer :: dz_lake(:,:)       ! lake layer thickness (m)  (1:nlevlak)
-   real(r8), pointer :: z_lake(:,:)        ! layer depth for lake (m)
-   real(r8), pointer :: savedtke1(:)       ! top level eddy conductivity from previous timestep (W/mK)
-   real(r8), pointer :: cellsand(:,:)      ! sand value for gridcell containing column (1:nlevsoi)
-   real(r8), pointer :: cellclay(:,:)      ! clay value for gridcell containing column (1:nlevsoi)
-   real(r8), pointer :: cellorg(:,:)       ! organic matter for gridcell containing column (1:nlevsoi)
-   real(r8), pointer :: lakedepth(:)       ! variable lake depth (m)
-   real(r8), pointer :: etal(:)            ! lake extinction coefficient from surface data (1/m)
-   real(r8), pointer :: lakefetch(:)       ! lake fetch from surface data (m)
-   real(r8), pointer :: ust_lake(:)        ! friction velocity (m/s)
-   ! end new variables for S Lake code
-   ! New variables for finundated in methane code
-   real(r8), pointer :: zwt0(:)             ! coefficient for determining finundated (m)
-   real(r8), pointer :: f0(:)               ! maximum inundated fraction for a gridcell (for methane code)
-   real(r8), pointer :: p3(:)               ! coefficient for determining finundated (m)
-   ! added by Lei Meng for pH effects of methane production
-   real(r8), pointer :: pH(:)               ! pH values
-   ! End New variables for methane code
    real(r8), pointer :: irrig_rate(:)         ! current irrigation rate [mm/s]
    integer, pointer  :: n_irrig_steps_left(:) ! number of time steps for which we still need to irrigate today (if 0, ignore irrig_rate)
    real(r8), pointer :: forc_pbot(:)          ! surface atm pressure, downscaled to column (Pa)
@@ -1449,7 +1177,6 @@ type, public :: column_estate_type
    real(r8), pointer :: dt_grnd(:)            !change in t_grnd, last iteration (Kelvin)
    real(r8), pointer :: t_soisno(:,:)         !soil temperature (Kelvin)  (-nlevsno+1:nlevgrnd) 
    real(r8), pointer :: t_soi_10cm(:)         !soil temperature in top 10cm of soil (Kelvin)
-   real(r8), pointer :: tsoi17(:)            !soil temperature in top 17cm of soil (Kelvin) by F. Li and S. Levis
    real(r8), pointer :: t_lake(:,:)           !lake temperature (Kelvin)  (1:nlevlak)          
    real(r8), pointer :: tssbef(:,:)           !soil/snow temperature before update (-nlevsno+1:nlevgrnd) 
    real(r8), pointer :: thv(:)                !virtual potential temperature (kelvin)
@@ -1457,8 +1184,6 @@ type, public :: column_estate_type
    real(r8), pointer :: hc_soisno(:)          !soil plus snow heat content (MJ/m2)
    real(r8), pointer :: forc_t(:)             !atm temperature, downscaled to column (Kelvin)
    real(r8), pointer :: forc_th(:)            !atm potl temperature, downscaled to column (Kelvin)
-   real(r8), pointer :: t_h2osfc(:) 	      !surface water temperature
-   real(r8), pointer :: t_h2osfc_bef(:)       !surface water temperature from time-step before
 end type column_estate_type
 
 type(column_estate_type) :: ces      !column energy state
@@ -1467,11 +1192,6 @@ type(column_estate_type) :: ces      !column energy state
 ! column water state variables structure
 !----------------------------------------------------
 type, public :: column_wstate_type
-   real(r8), pointer :: h2osfc(:)             !surface water (mm H2O)
-   real(r8), pointer :: qg_snow(:)            !ground specific humidity [kg/kg]
-   real(r8), pointer :: qg_soil(:)            !ground specific humidity [kg/kg]
-   real(r8), pointer :: qg_h2osfc(:)          !ground specific humidity [kg/kg]
-   real(r8), pointer :: swe_old(:,:)          !initial snow water
    real(r8), pointer :: h2osno(:)             !snow water (mm H2O)
    real(r8), pointer :: errh2osno(:)          !imbalance in snow water (mm H2O)
    real(r8), pointer :: snow_sources(:)       !snow sources (mm H2O/s)
@@ -1489,28 +1209,16 @@ type, public :: column_wstate_type
    real(r8), pointer :: soilbeta(:)           !factor that reduces ground evaporation L&P1992(-)
    real(r8) ,pointer :: soilalpha_u(:)        !urban factor that reduces ground saturated specific humidity (-)
    real(r8), pointer :: zwt(:)                !water table depth
-   real(r8), pointer :: frost_table(:)        !frost table depth
-   real(r8), pointer :: zwt_perched(:)        !perched water table depth
-   real(r8), pointer :: int_snow(:)           !integrated snowfall (mm H2O)
+   !real(r8), pointer :: frost_table(:)                !frost table depth
+   !real(r8), pointer :: zwt_perched(:)                !perched water table depth
    real(r8), pointer :: fcov(:)               !fractional impermeable area
    real(r8), pointer :: wa(:)                 !water in the unconfined aquifer (mm)
+   real(r8), pointer :: wt(:)                 !total water storage (unsaturated soil water + groundwater) (mm)
    real(r8), pointer :: qcharge(:)            !aquifer recharge rate (mm/s)
    real(r8), pointer :: smp_l(:,:)            !soil matric potential (mm)
    real(r8), pointer :: hk_l(:,:)             !hydraulic conductivity (mm/s)
    real(r8), pointer :: fsat(:)               !fractional area with water table at surface
    real(r8), pointer :: forc_q(:)             !atm specific humidity, downscaled to column (kg/kg)
-   ! VICHYDRO
-   real(r8), pointer :: moist(:,:)            !soil moisture (kg/m2) for VIC soil layers
-   real(r8), pointer :: ice(:,:)              !soil ice (kg/m2) for VIC soil layers
-   real(r8), pointer :: moist_vol(:,:)        !volumetric soil moisture for VIC soil layers
-   real(r8), pointer :: max_infil(:)          !maximum infiltration rate calculated by VIC
-   real(r8), pointer :: i_0(:)                !average saturation in top soil layers in VIC
-   ! CH4
-   real(r8), pointer :: finundated(:)         !fractional inundated area (excluding dedicated wetland columns)
-   ! new variables for S Lake code
-   real(r8), pointer :: lake_icefrac(:,:)     ! mass fraction of lake layer that is frozen
-   real(r8), pointer :: lake_icethick(:)      ! ice thickness (m) (integrated if lakepuddling)
-   ! end new variables for S Lake code
 end type column_wstate_type
 
 type(column_wstate_type) :: cws      !column water state
@@ -1523,144 +1231,60 @@ type, public :: column_cstate_type
    ! NOTE: the soilc variable is used by the original CLM C-cycle code,
    ! and is not used by the CN code
    real(r8), pointer :: soilc(:)              !soil carbon (kg C /m**2)
-   ! all c pools involved in decomposition
-   real(r8), pointer :: decomp_cpools_vr(:,:,:)         ! (gC/m3) vertically-resolved decomposing (litter, cwd, soil) c pools
-   real(r8), pointer :: col_ctrunc_vr(:,:)              ! (gC/m3) vertically-resolved column-level sink for C truncation
-
-   !fire-related variables added by F. Li and S. Levis
-   real(r8), pointer :: rootc_col(:)     !root carbon at column level (gC/m2)
-   real(r8), pointer :: totvegc_col(:)   !column-level totvegc (gC/m2)  
-   real(r8), pointer :: leafc_col(:)     !column-level leafc (gC/m2)       
-   real(r8), pointer :: fuelc(:)         ! fuel avalability factor for Reg.C (0-1)
-   real(r8), pointer :: fuelc_crop(:)    ! fuel avalability factor for Reg.A (0-1)
-
-  ! pools for dynamic landcover
-   real(r8), pointer :: seedc(:)                        ! (gC/m2) column-level pool for seeding new PFTs
-   real(r8), pointer :: prod10c(:)                      ! (gC/m2) wood product C pool, 10-year lifespan
-   real(r8), pointer :: prod100c(:)                     ! (gC/m2) wood product C pool, 100-year lifespan
-   real(r8), pointer :: totprodc(:)                     ! (gC/m2) total wood product C
+   ! BGC variables
+   real(r8), pointer :: cwdc(:)               ! (gC/m2) coarse woody debris C
+   real(r8), pointer :: litr1c(:)             ! (gC/m2) litter labile C
+   real(r8), pointer :: litr2c(:)             ! (gC/m2) litter cellulose C
+   real(r8), pointer :: litr3c(:)             ! (gC/m2) litter lignin C
+   real(r8), pointer :: soil1c(:)             ! (gC/m2) soil organic matter C (fast pool)
+   real(r8), pointer :: soil2c(:)             ! (gC/m2) soil organic matter C (medium pool)
+   real(r8), pointer :: soil3c(:)             ! (gC/m2) soil organic matter C (slow pool)
+   real(r8), pointer :: soil4c(:)             ! (gC/m2) soil organic matter C (slowest pool)
+   real(r8), pointer :: col_ctrunc(:)         ! (gC/m2) column-level sink for C truncation
+   ! pools for dynamic landcover
+   real(r8), pointer :: seedc(:)              ! (gC/m2) column-level pool for seeding new PFTs
+   real(r8), pointer :: prod10c(:)            ! (gC/m2) wood product C pool, 10-year lifespan
+   real(r8), pointer :: prod100c(:)           ! (gC/m2) wood product C pool, 100-year lifespan
+   real(r8), pointer :: totprodc(:)           ! (gC/m2) total wood product C
    ! summary (diagnostic) state variables, not involved in mass balance
-   real(r8), pointer :: decomp_cpools(:,:)              ! (gC/m2)  decomposing (litter, cwd, soil) c pools
-   real(r8), pointer :: decomp_cpools_1m(:,:)           ! (gC/m2)  Diagnostic: decomposing (litter, cwd, soil) c pools to 1 meter
-   real(r8), pointer :: cwdc(:)                         ! (gC/m2) Diagnostic: coarse woody debris C
-   real(r8), pointer :: col_ctrunc(:)                   ! (gC/m2) column-level sink for C truncation
-   real(r8), pointer :: totlitc(:)                      ! (gC/m2) total litter carbon
-   real(r8), pointer :: totsomc(:)                      ! (gC/m2) total soil organic matter carbon
-   real(r8), pointer :: totlitc_1m(:)                   ! (gC/m2) total litter carbon to 1 meter
-   real(r8), pointer :: totsomc_1m(:)                   ! (gC/m2) total soil organic matter carbon to 1 meter
-   real(r8), pointer :: totecosysc(:)                   ! (gC/m2) total ecosystem carbon, incl veg but excl cpool
-   real(r8), pointer :: totcolc(:)                      ! (gC/m2) total column carbon, incl veg and cpool
+   real(r8), pointer :: totlitc(:)            ! (gC/m2) total litter carbon
+   real(r8), pointer :: totsomc(:)            ! (gC/m2) total soil organic matter carbon
+   real(r8), pointer :: totecosysc(:)         ! (gC/m2) total ecosystem carbon, incl veg but excl cpool
+   real(r8), pointer :: totcolc(:)            ! (gC/m2) total column carbon, incl veg and cpool
 end type column_cstate_type
 
-type(column_cstate_type), target :: ccs      !column carbon state
-type(column_cstate_type), target :: cc13s    !column carbon-13 state
-type(column_cstate_type), target :: cc14s    !column carbon-14 state
-
-!----------------------------------------------------
-! column methane variables structure
-!----------------------------------------------------
-type, public :: column_ch4_type
-   ! new variables for CH4 code
-   ! column-level methane fluxes
-   real(r8), pointer :: ch4_prod_depth_sat(:,:) ! CH4 production rate from methanotrophs (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: ch4_prod_depth_unsat(:,:) ! CH4 production rate from methanotrophs (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: ch4_prod_depth_lake(:,:)! CH4 production rate from methanotrophs (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: ch4_oxid_depth_sat(:,:) ! CH4 consumption rate via oxidation in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: ch4_oxid_depth_unsat(:,:) !CH4 consumption rate via oxidation in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: ch4_oxid_depth_lake(:,:) ! CH4 consumption rate via oxidation in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: ch4_aere_depth_sat(:,:) ! CH4 loss rate via aerenchyma in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: ch4_aere_depth_unsat(:,:) ! CH4 loss rate via aerenchyma in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: ch4_tran_depth_sat(:,:) ! CH4 loss rate via transpiration in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: ch4_tran_depth_unsat(:,:) ! CH4 loss rate via transpiration in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: ch4_ebul_depth_sat(:,:) ! CH4 loss rate via ebullition in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: ch4_ebul_depth_unsat(:,:) ! CH4 loss rate via ebullition in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: ch4_ebul_total_sat(:)   ! Total column CH4 ebullition (mol/m2/s)
-   real(r8), pointer :: ch4_ebul_total_unsat(:)   ! Total column CH4 ebullition (mol/m2/s)
-   real(r8), pointer :: ch4_surf_aere_sat(:)   ! CH4 aerenchyma flux to atmosphere (after oxidation) (mol/m2/s)
-   real(r8), pointer :: ch4_surf_aere_unsat(:)   ! CH4 aerenchyma flux to atmosphere (after oxidation) (mol/m2/s)
-   real(r8), pointer :: ch4_surf_ebul_sat(:)   ! CH4 ebullition flux to atmosphere (after oxidation) (mol/m2/s)
-   real(r8), pointer :: ch4_surf_ebul_unsat(:)   ! CH4 ebullition flux to atmosphere (after oxidation) (mol/m2/s)
-   real(r8), pointer :: ch4_surf_ebul_lake(:)   ! CH4 ebullition flux to atmosphere (after oxidation) (mol/m2/s)
-   real(r8), pointer :: co2_aere_depth_sat(:,:) ! CO2 loss rate via aerenchyma in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: co2_aere_depth_unsat(:,:) ! CO2 loss rate via aerenchyma in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: o2_oxid_depth_sat(:,:)  ! O2 consumption rate via oxidation in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: o2_oxid_depth_unsat(:,:)  ! O2 consumption rate via oxidation in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: o2_aere_depth_sat(:,:)  ! O2 gain rate via aerenchyma in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: o2_aere_depth_unsat(:,:)  ! O2 gain rate via aerenchyma in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: o2_decomp_depth_sat(:,:) !O2 consumption during decomposition in each soil layer (nlevsoi) (mol/m3/s)
-   real(r8), pointer :: o2_decomp_depth_unsat(:,:)!O2 consumption during decomposition in each soil layer (nlevsoi) (mol/m3/s)
-   real(r8), pointer :: co2_decomp_depth_sat(:,:)  ! CO2 production during decomposition in each soil layer (nlevsoi) (mol/m3/s)
-   real(r8), pointer :: co2_decomp_depth_unsat(:,:)  ! CO2 production during decomposition in each soil layer (nlevsoi) (mol/m3/s)
-   real(r8), pointer :: co2_oxid_depth_sat(:,:) ! CO2 production rate via oxidation in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: co2_oxid_depth_unsat(:,:) ! CO2 production rate via oxidation in each soil layer (mol/m3/s) (nlevsoi)
-   real(r8), pointer :: conc_o2_sat(:,:)        ! O2 conc in each soil layer (mol/m3) (nlevsoi)
-   real(r8), pointer :: conc_o2_unsat(:,:)        ! O2 conc in each soil layer (mol/m3) (nlevsoi)
-   real(r8), pointer :: conc_o2_lake(:,:)        ! O2 conc in each soil layer (mol/m3) (nlevsoi)
-   real(r8), pointer :: conc_ch4_sat(:,:)       ! CH4 conc in each soil layer (mol/m3) (nlevsoi)
-   real(r8), pointer :: conc_ch4_unsat(:,:)       ! CH4 conc in each soil layer (mol/m3) (nlevsoi)
-   real(r8), pointer :: conc_ch4_lake(:,:)      ! CH4 conc in each soil layer (mol/m3) (nlevsoi)
-   real(r8), pointer :: ch4_surf_diff_sat(:)    ! CH4 surface flux (mol/m2/s)
-   real(r8), pointer :: ch4_surf_diff_unsat(:)    ! CH4 surface flux (mol/m2/s)
-   real(r8), pointer :: ch4_surf_diff_lake(:)   ! CH4 surface flux (mol/m2/s)
-   real(r8), pointer :: ch4_dfsat_flux(:)       ! CH4 flux to atm due to decreasing fsat (kg C/m^2/s) [+]
-   ! Other variables
-   real(r8), pointer :: zwt_ch4_unsat(:) ! depth of water table for unsaturated fraction (m)
-   real(r8), pointer :: fsat_bef(:)    !fsat from previous timestep
-   real(r8), pointer :: lake_soilc(:,:)      ! total soil organic matter found in level (g C / m^3) (nlevsoi)
-   real(r8), pointer :: lake_raw(:)        !aerodynamic resistance for moisture (s/m)
-   real(r8), pointer :: totcolch4(:)       ! total methane found in soil column (g C / m^2)
-   real(r8), pointer :: fphr(:,:)         ! fraction of potential heterotrophic respiration
-   real(r8), pointer :: annsum_counter(:)     ! seconds since last annual accumulator turnover
-   real(r8), pointer :: tempavg_somhr(:)         ! temporary average SOM heterotrophic resp. (gC/m2/s)
-   real(r8), pointer :: annavg_somhr(:)          ! annual average SOM heterotrophic resp. (gC/m2/s)
-   real(r8), pointer :: tempavg_finrw(:)    ! respiration-weighted annual average of finundated
-   real(r8), pointer :: annavg_finrw(:)    ! respiration-weighted annual average of finundated
-   real(r8), pointer :: sif(:) ! (unitless) ratio applied to sat. prod. to account for seasonal inundation
-   real(r8), pointer :: o2stress_unsat(:,:) ! Ratio of oxygen available to that demanded by roots, aerobes, & methanotrophs (nlevsoi)
-   real(r8), pointer :: o2stress_sat(:,:) ! Ratio of oxygen available to that demanded by roots, aerobes, & methanotrophs (nlevsoi)
-   real(r8), pointer :: ch4stress_unsat(:,:) ! Ratio of methane available to the total per-timestep methane sinks (nlevsoi)
-   real(r8), pointer :: ch4stress_sat(:,:) ! Ratio of methane available to the total per-timestep methane sinks (nlevsoi)
-   real(r8), pointer :: qflx_surf_lag(:)	! time-lagged surface runoff (mm H2O /s)
-   real(r8), pointer :: finundated_lag(:)       ! time-lagged fractional inundated area
-   real(r8), pointer :: layer_sat_lag(:,:) ! Lagged saturation status of soil layer in the unsaturated zone (1 = sat)
-end type column_ch4_type
-
-type(column_ch4_type)   :: cch4      !column CH4 variables
+type(column_cstate_type) :: ccs      !column carbon state
+type(column_cstate_type) :: cc13s    !column carbon-13 state
 
 !----------------------------------------------------
 ! column nitrogen state variables structure
 !----------------------------------------------------
 type, public :: column_nstate_type
-   ! all n pools involved in decomposition
-   real(r8), pointer :: decomp_npools_vr(:,:,:)    ! (gN/m3)  vertically-resolved decomposing (litter, cwd, soil) N pools
-   real(r8), pointer :: sminn_vr(:,:)              ! (gN/m3) vertically-resolved soil mineral N
-   real(r8), pointer :: col_ntrunc_vr(:,:)         ! (gN/m3) vertically-resolved column-level sink for N truncation
-   ! NITRIF_DENITRIF
-   real(r8), pointer :: smin_no3_vr(:,:)           ! (gN/m3) vertically-resolved soil mineral NO3
-   real(r8), pointer :: smin_no3(:)                ! (gN/m2) soil mineral NO3 pool
-   real(r8), pointer :: smin_nh4_vr(:,:)           ! (gN/m3) vertically-resolved soil mineral NH4
-   real(r8), pointer :: smin_nh4(:)                ! (gN/m2) soil mineral NH4 pool
+   ! BGC variables
+   real(r8), pointer :: cwdn(:)               ! (gN/m2) coarse woody debris N
+   real(r8), pointer :: litr1n(:)             ! (gN/m2) litter labile N
+   real(r8), pointer :: litr2n(:)             ! (gN/m2) litter cellulose N
+   real(r8), pointer :: litr3n(:)             ! (gN/m2) litter lignin N
+   real(r8), pointer :: soil1n(:)             ! (gN/m2) soil organic matter N (fast pool)
+   real(r8), pointer :: soil2n(:)             ! (gN/m2) soil organic matter N (medium pool)
+   real(r8), pointer :: soil3n(:)             ! (gN/m2) soil orgainc matter N (slow pool)
+   real(r8), pointer :: soil4n(:)             ! (gN/m2) soil orgainc matter N (slowest pool)
+   real(r8), pointer :: sminn(:)              ! (gN/m2) soil mineral N
+   real(r8), pointer :: col_ntrunc(:)         ! (gN/m2) column-level sink for N truncation
    ! wood product pools, for dynamic landcover
-   real(r8), pointer :: seedn(:)                   ! (gN/m2) column-level pool for seeding new PFTs
-   real(r8), pointer :: prod10n(:)                 ! (gN/m2) wood product N pool, 10-year lifespan
-   real(r8), pointer :: prod100n(:)                ! (gN/m2) wood product N pool, 100-year lifespan
-   real(r8), pointer :: totprodn(:)                ! (gN/m2) total wood product N
+   real(r8), pointer :: seedn(:)              ! (gN/m2) column-level pool for seeding new PFTs
+   real(r8), pointer :: prod10n(:)            ! (gN/m2) wood product N pool, 10-year lifespan
+   real(r8), pointer :: prod100n(:)           ! (gN/m2) wood product N pool, 100-year lifespan
+   real(r8), pointer :: totprodn(:)           ! (gN/m2) total wood product N
    ! summary (diagnostic) state variables, not involved in mass balance
-   real(r8), pointer :: decomp_npools(:,:)         ! (gN/m2)  decomposing (litter, cwd, soil) N pools
-   real(r8), pointer :: decomp_npools_1m(:,:)           ! (gN/m2)  diagnostic: decomposing (litter, cwd, soil) N pools to 1 meter
-   real(r8), pointer :: sminn(:)                   ! (gN/m2) soil mineral N
-   real(r8), pointer :: col_ntrunc(:)              ! (gN/m2) column-level sink for N truncation
-   real(r8), pointer :: cwdn(:)                    ! (gN/m2) Diagnostic: coarse woody debris N
-   real(r8), pointer :: totlitn(:)                 ! (gN/m2) total litter nitrogen
-   real(r8), pointer :: totsomn(:)                 ! (gN/m2) total soil organic matter nitrogen
-   real(r8), pointer :: totlitn_1m(:)              ! (gN/m2) total litter nitrogen to 1 meter
-   real(r8), pointer :: totsomn_1m(:)              ! (gN/m2) total soil organic matter nitrogen to 1 meter
-   real(r8), pointer :: totecosysn(:)              ! (gN/m2) total ecosystem nitrogen, incl veg 
-   real(r8), pointer :: totcoln(:)                 ! (gN/m2) total column nitrogen, incl veg
+   real(r8), pointer :: totlitn(:)            ! (gN/m2) total litter nitrogen
+   real(r8), pointer :: totsomn(:)            ! (gN/m2) total soil organic matter nitrogen
+   real(r8), pointer :: totecosysn(:)         ! (gN/m2) total ecosystem nitrogen, incl veg 
+   real(r8), pointer :: totcoln(:)            ! (gN/m2) total column nitrogen, incl veg
 end type column_nstate_type
 
 type(column_nstate_type) :: cns      !column nitrogen state
-type(column_nstate_type) :: cns_a    !column-level nitrogen state variables averaged to gridcell
+type(pft_nstate_type)    :: pns_a    !pft-level nitrogen state variables averaged to the column
 
 !----------------------------------------------------
 ! column VOC state variables structure
@@ -1692,7 +1316,6 @@ type, public :: column_eflux_type
    real(r8), pointer :: eflx_snomelt_r(:)     ! rural snow melt heat flux (W/m**2)
    real(r8), pointer :: eflx_impsoil(:)	      ! implicit evaporation for soil temperature equation
    real(r8), pointer :: eflx_fgr12(:)         ! ground heat flux between soil layers 1 and 2 (W/m2)
-   real(r8), pointer :: eflx_fgr(:,:)         ! (rural) soil downward heat flux (W/m2) (1:nlevgrnd)
    ! Urban variable
    real(r8), pointer :: eflx_building_heat(:) ! heat flux from urban building interior to urban walls, roof (W/m**2)
    real(r8), pointer :: eflx_urban_ac(:)      ! urban air conditioning flux (W/m**2)
@@ -1711,6 +1334,9 @@ type, public :: column_mflux_type
    real(r8), pointer :: dummy_entry(:)
 end type column_mflux_type
 
+type(column_mflux_type) :: cmf       ! column momentum flux
+type(pft_mflux_type)    :: pmf_a     ! pft-level momentum flux variables averaged to the column
+
 !----------------------------------------------------
 ! column water flux variables structure
 !----------------------------------------------------
@@ -1719,20 +1345,23 @@ type, public :: column_wflux_type
    real(r8), pointer :: qflx_surf(:)	! surface runoff (mm H2O /s)
    real(r8), pointer :: qflx_drain(:) 	! sub-surface runoff (mm H2O /s)
    real(r8), pointer :: qflx_top_soil(:)! net water input into soil from top (mm/s)
-   real(r8), pointer :: qflx_h2osfc_to_ice(:) ! conversion of h2osfc to ice
-   real(r8), pointer :: qflx_h2osfc_surf(:)   !surface water runoff
-   real(r8), pointer :: qflx_snow_h2osfc(:)   !snow falling on surface water
-   real(r8), pointer :: qflx_drain_perched(:) ! sub-surface runoff from perched wt (mm H2O /s)
-   real(r8), pointer :: qflx_floodc(:) 	      ! flood water flux at column level
-   real(r8), pointer :: qflx_sl_top_soil(:)   ! liquid water + ice from layer above soil to top soil layer or sent to qflx_qrgwl (mm H2O/s)
-   real(r8), pointer :: qflx_snomelt(:)       ! snow melt (mm H2O /s)
-   real(r8), pointer :: qflx_snow_melt(:)     ! snow melt (net)
-   real(r8), pointer :: qflx_qrgwl(:) 	    ! qflx_surf at glaciers, wetlands, lakes
-   real(r8), pointer :: qflx_runoff(:) 	    ! total runoff (qflx_drain+qflx_surf+qflx_qrgwl) (mm H2O /s)
-   real(r8), pointer :: qflx_runoff_u(:)    ! Urban total runoff (qflx_drain+qflx_surf) (mm H2O /s)
-   real(r8), pointer :: qflx_runoff_r(:)    ! Rural total runoff (qflx_drain+qflx_surf+qflx_qrgwl) (mm H2O /s)
-   real(r8), pointer :: qmelt(:) 	    ! snow melt [mm/s]
-   real(r8), pointer :: h2ocan_loss(:)      ! mass balance correction term for dynamic weights
+   real(r8), pointer :: qflx_sl_top_soil(:)     ! liquid water + ice from layer above soil to top soil layer or sent to qflx_qrgwl (mm H2O/s)
+   !real(r8), pointer :: qflx_snow_out(:)       ! net water output from snow column
+   !real(r8), pointer :: qflx_drain_perched(:) 	! sub-surface runoff from perched wt (mm H2O /s)
+   !
+   real(r8), pointer :: qflx_h2osfc_surf(:)     ! surface water runoff
+   real(r8), pointer :: qflx_snow_h2osfc(:)     ! snow falling on surface water
+   real(r8), pointer :: qflx_drain_perched(:) 	! sub-surface runoff from perched wt (mm H2O /s)
+   real(r8), pointer :: qflx_floodc(:) 	        ! flood water flux at column level
+   real(r8), pointer :: qflx_snow_melt(:)       ! snow melt (net)
+   !
+   real(r8), pointer :: qflx_snomelt(:) ! snow melt (mm H2O /s)
+   real(r8), pointer :: qflx_qrgwl(:) 	! qflx_surf at glaciers, wetlands, lakes
+   real(r8), pointer :: qflx_runoff(:) 	! total runoff (qflx_drain+qflx_surf+qflx_qrgwl) (mm H2O /s)
+   real(r8), pointer :: qflx_runoff_u(:)! Urban total runoff (qflx_drain+qflx_surf) (mm H2O /s)
+   real(r8), pointer :: qflx_runoff_r(:)! Rural total runoff (qflx_drain+qflx_surf+qflx_qrgwl) (mm H2O /s)
+   real(r8), pointer :: qmelt(:) 	! snow melt [mm/s]
+   real(r8), pointer :: h2ocan_loss(:)  ! mass balance correction term for dynamic weights
    real(r8), pointer :: qflx_rsub_sat(:)    ! soil saturation excess [mm/s]
    real(r8), pointer :: flx_bc_dep_dry(:)   ! dry (BCPHO+BCPHI) BC deposition on ground (positive definite) (col) [kg/s]
    real(r8), pointer :: flx_bc_dep_wet(:)   ! wet (BCPHI) BC deposition on ground (positive definite) (col) [kg/s]
@@ -1755,7 +1384,7 @@ type, public :: column_wflux_type
    real(r8), pointer :: flx_dst_dep(:)      ! total (dry+wet) dust deposition on ground (positive definite) (col) [kg/s]
    real(r8), pointer :: qflx_snofrz_lyr(:,:)! snow freezing rate (positive definite) (col,lyr) [kg m-2 s-1]
    real(r8), pointer :: qflx_snofrz_col(:)  ! column-integrated snow freezing rate (positive definite) (col) [kg m-2 s-1]
-   real(r8), pointer :: qflx_irrig(:)     !irrigation flux (mm H2O/s)
+   real(r8), pointer :: qflx_irrig(:)       ! irrigation flux (mm H2O/s)
    real(r8), pointer :: qflx_glcice(:)      ! net flux of new glacial ice (growth - melt) (mm H2O/s), passed to GLC
    real(r8), pointer :: qflx_glcice_frz(:)  ! ice growth (positive definite) (mm H2O/s)
    real(r8), pointer :: qflx_glcice_melt(:) ! ice melt (positive definite) (mm H2O/s)
@@ -1770,65 +1399,110 @@ type(pft_wflux_type)    :: pwf_a     ! pft-level water flux variables averaged t
 ! column carbon flux variables structure
 !----------------------------------------------------
 type, public :: column_cflux_type
-   ! phenology: litterfall and crop fluxes
-   real(r8), pointer :: phenology_c_to_litr_met_c(:,:)             ! C fluxes associated with phenology (litterfall and crop) to litter metabolic pool (gC/m3/s)
-   real(r8), pointer :: phenology_c_to_litr_cel_c(:,:)             ! C fluxes associated with phenology (litterfall and crop) to litter cellulose pool (gC/m3/s)
-   real(r8), pointer :: phenology_c_to_litr_lig_c(:,:)             ! C fluxes associated with phenology (litterfall and crop) to litter lignin pool (gC/m3/s)
-   ! gap mortality
-   real(r8), pointer :: gap_mortality_c_to_litr_met_c(:,:)         ! C fluxes associated with gap mortality to litter metabolic pool (gC/m3/s)
-   real(r8), pointer :: gap_mortality_c_to_litr_cel_c(:,:)         ! C fluxes associated with gap mortality to litter cellulose pool (gC/m3/s)
-   real(r8), pointer :: gap_mortality_c_to_litr_lig_c(:,:)         ! C fluxes associated with gap mortality to litter lignin pool (gC/m3/s)
-   real(r8), pointer :: gap_mortality_c_to_cwdc(:,:)               ! C fluxes associated with gap mortality to CWD pool (gC/m3/s)
-   ! fire
-   real(r8), pointer :: fire_mortality_c_to_cwdc(:,:)              ! C fluxes associated with fire mortality to CWD pool (gC/m3/s)
-   ! harvest
-   real(r8), pointer :: harvest_c_to_litr_met_c(:,:)               ! C fluxes associated with harvest to litter metabolic pool (gC/m3/s)
-   real(r8), pointer :: harvest_c_to_litr_cel_c(:,:)               ! C fluxes associated with harvest to litter cellulose pool (gC/m3/s)
-   real(r8), pointer :: harvest_c_to_litr_lig_c(:,:)               ! C fluxes associated with harvest to litter lignin pool (gC/m3/s)
-   real(r8), pointer :: harvest_c_to_cwdc(:,:)                     ! C fluxes associated with harvest to CWD pool (gC/m3/s)
    ! new variables for CN code
-   real(r8), pointer :: hrv_deadstemc_to_prod10c(:)                ! dead stem C harvest mortality to 10-year product pool (gC/m2/s)        
-   real(r8), pointer :: hrv_deadstemc_to_prod100c(:)               ! dead stem C harvest mortality to 100-year product pool (gC/m2/s)        
+   ! column-level gap mortality fluxes
+   real(r8), pointer :: m_leafc_to_litr1c(:)              ! leaf C mortality to litter 1 C (gC/m2/s) 
+   real(r8), pointer :: m_leafc_to_litr2c(:)              ! leaf C mortality to litter 2 C (gC/m2/s)
+   real(r8), pointer :: m_leafc_to_litr3c(:)              ! leaf C mortality to litter 3 C (gC/m2/s)
+   real(r8), pointer :: m_frootc_to_litr1c(:)             ! fine root C mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_frootc_to_litr2c(:)             ! fine root C mortality to litter 2 C (gC/m2/s)
+   real(r8), pointer :: m_frootc_to_litr3c(:)             ! fine root C mortality to litter 3 C (gC/m2/s)
+   real(r8), pointer :: m_livestemc_to_cwdc(:)            ! live stem C mortality to coarse woody debris C (gC/m2/s)
+   real(r8), pointer :: m_deadstemc_to_cwdc(:)            ! dead stem C mortality to coarse woody debris C (gC/m2/s)
+   real(r8), pointer :: m_livecrootc_to_cwdc(:)           ! live coarse root C mortality to coarse woody debris C (gC/m2/s)
+   real(r8), pointer :: m_deadcrootc_to_cwdc(:)           ! dead coarse root C mortality to coarse woody debris C (gC/m2/s)
+   real(r8), pointer :: m_leafc_storage_to_litr1c(:)      ! leaf C storage mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_frootc_storage_to_litr1c(:)     ! fine root C storage mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_livestemc_storage_to_litr1c(:)  ! live stem C storage mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_deadstemc_storage_to_litr1c(:)  ! dead stem C storage mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_livecrootc_storage_to_litr1c(:) ! live coarse root C storage mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_deadcrootc_storage_to_litr1c(:) ! dead coarse root C storage mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_gresp_storage_to_litr1c(:)      ! growth respiration storage mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_leafc_xfer_to_litr1c(:)         ! leaf C transfer mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_frootc_xfer_to_litr1c(:)        ! fine root C transfer mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_livestemc_xfer_to_litr1c(:)     ! live stem C transfer mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_deadstemc_xfer_to_litr1c(:)     ! dead stem C transfer mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_livecrootc_xfer_to_litr1c(:)    ! live coarse root C transfer mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_deadcrootc_xfer_to_litr1c(:)    ! dead coarse root C transfer mortality to litter 1 C (gC/m2/s)
+   real(r8), pointer :: m_gresp_xfer_to_litr1c(:)         ! growth respiration transfer mortality to litter 1 C (gC/m2/s)
+   ! column-level harvest mortality fluxes
+   real(r8), pointer :: hrv_leafc_to_litr1c(:)               ! leaf C harvest mortality to litter 1 C (gC/m2/s)                         
+   real(r8), pointer :: hrv_leafc_to_litr2c(:)               ! leaf C harvest mortality to litter 2 C (gC/m2/s)                        
+   real(r8), pointer :: hrv_leafc_to_litr3c(:)               ! leaf C harvest mortality to litter 3 C (gC/m2/s)                        
+   real(r8), pointer :: hrv_frootc_to_litr1c(:)              ! fine root C harvest mortality to litter 1 C (gC/m2/s)                   
+   real(r8), pointer :: hrv_frootc_to_litr2c(:)              ! fine root C harvest mortality to litter 2 C (gC/m2/s)                   
+   real(r8), pointer :: hrv_frootc_to_litr3c(:)              ! fine root C harvest mortality to litter 3 C (gC/m2/s)                   
+   real(r8), pointer :: hrv_livestemc_to_cwdc(:)             ! live stem C harvest mortality to coarse woody debris C (gC/m2/s)        
+   real(r8), pointer :: hrv_deadstemc_to_prod10c(:)          ! dead stem C harvest mortality to 10-year product pool (gC/m2/s)        
+   real(r8), pointer :: hrv_deadstemc_to_prod100c(:)         ! dead stem C harvest mortality to 100-year product pool (gC/m2/s)        
+   real(r8), pointer :: hrv_livecrootc_to_cwdc(:)            ! live coarse root C harvest mortality to coarse woody debris C (gC/m2/s) 
+   real(r8), pointer :: hrv_deadcrootc_to_cwdc(:)            ! dead coarse root C harvest mortality to coarse woody debris C (gC/m2/s) 
+   real(r8), pointer :: hrv_leafc_storage_to_litr1c(:)       ! leaf C storage harvest mortality to litter 1 C (gC/m2/s)                
+   real(r8), pointer :: hrv_frootc_storage_to_litr1c(:)      ! fine root C storage harvest mortality to litter 1 C (gC/m2/s)           
+   real(r8), pointer :: hrv_livestemc_storage_to_litr1c(:)   ! live stem C storage harvest mortality to litter 1 C (gC/m2/s)           
+   real(r8), pointer :: hrv_deadstemc_storage_to_litr1c(:)   ! dead stem C storage harvest mortality to litter 1 C (gC/m2/s)           
+   real(r8), pointer :: hrv_livecrootc_storage_to_litr1c(:)  ! live coarse root C storage harvest mortality to litter 1 C (gC/m2/s)    
+   real(r8), pointer :: hrv_deadcrootc_storage_to_litr1c(:)  ! dead coarse root C storage harvest mortality to litter 1 C (gC/m2/s)    
+   real(r8), pointer :: hrv_gresp_storage_to_litr1c(:)       ! growth respiration storage harvest mortality to litter 1 C (gC/m2/s)    
+   real(r8), pointer :: hrv_leafc_xfer_to_litr1c(:)          ! leaf C transfer harvest mortality to litter 1 C (gC/m2/s)               
+   real(r8), pointer :: hrv_frootc_xfer_to_litr1c(:)         ! fine root C transfer harvest mortality to litter 1 C (gC/m2/s)          
+   real(r8), pointer :: hrv_livestemc_xfer_to_litr1c(:)      ! live stem C transfer harvest mortality to litter 1 C (gC/m2/s)          
+   real(r8), pointer :: hrv_deadstemc_xfer_to_litr1c(:)      ! dead stem C transfer harvest mortality to litter 1 C (gC/m2/s)          
+   real(r8), pointer :: hrv_livecrootc_xfer_to_litr1c(:)     ! live coarse root C transfer harvest mortality to litter 1 C (gC/m2/s)   
+   real(r8), pointer :: hrv_deadcrootc_xfer_to_litr1c(:)     ! dead coarse root C transfer harvest mortality to litter 1 C (gC/m2/s)   
+   real(r8), pointer :: hrv_gresp_xfer_to_litr1c(:)          ! growth respiration transfer harvest mortality to litter 1 C (gC/m2/s)   
    ! column-level fire fluxes
-   real(r8), pointer :: m_decomp_cpools_to_fire_vr(:,:,:)          ! vertically-resolved decomposing C fire loss (gC/m3/s)
-   real(r8), pointer :: m_decomp_cpools_to_fire(:,:)               ! vertically-integrated (diagnostic) decomposing C fire loss (gC/m2/s)
-   real(r8), pointer :: m_c_to_litr_met_fire(:,:)        ! C from leaf, froot, xfer and storage C to litter labile C by fire (gC/m3/s) 
-   real(r8), pointer :: m_c_to_litr_cel_fire(:,:)        ! C from leaf, froot, xfer and storage C to litter cellulose C by fire (gC/m3/s) 
-   real(r8), pointer :: m_c_to_litr_lig_fire(:,:)        ! C from leaf, froot, xfer and storage C to litter lignin C by fire (gC/m3/s) 
-   real(r8), pointer :: lf_conv_cflux(:)                ! (gC/m2/s) conversion C flux due to BET and BDT area decreasing (immediate loss to atm)
-   real(r8), pointer :: somc_fire(:)                     ! (gC/m2/s) carbon emissions due to peat burning
-
+   real(r8), pointer :: m_deadstemc_to_cwdc_fire(:)       ! dead stem C to coarse woody debris C by fire (gC/m2/s)
+   real(r8), pointer :: m_deadcrootc_to_cwdc_fire(:)      ! dead coarse root C to to woody debris C by fire (gC/m2/s)
+   real(r8), pointer :: m_litr1c_to_fire(:)               ! litter 1 C fire loss (gC/m2/s)
+   real(r8), pointer :: m_litr2c_to_fire(:)               ! litter 2 C fire loss (gC/m2/s)
+   real(r8), pointer :: m_litr3c_to_fire(:)               ! litter 3 C fire loss (gC/m2/s)
+   real(r8), pointer :: m_cwdc_to_fire(:)                 ! coarse woody debris C fire loss (gC/m2/s)
+   ! litterfall fluxes
+   real(r8), pointer :: livestemc_to_litr1c(:)            ! livestem C litterfall to litter 1 C (gC/m2/s)
+   real(r8), pointer :: livestemc_to_litr2c(:)            ! livestem C litterfall to litter 2 C (gC/m2/s)
+   real(r8), pointer :: livestemc_to_litr3c(:)            ! livestem C litterfall to litter 3 C (gC/m2/s)
+   real(r8), pointer :: leafc_to_litr1c(:)                ! leaf C litterfall to litter 1 C (gC/m2/s)
+   real(r8), pointer :: leafc_to_litr2c(:)                ! leaf C litterfall to litter 2 C (gC/m2/s)
+   real(r8), pointer :: leafc_to_litr3c(:)                ! leaf C litterfall to litter 3 C (gC/m2/s)
+   real(r8), pointer :: frootc_to_litr1c(:)               ! fine root C litterfall to litter 1 C (gC/m2/s)
+   real(r8), pointer :: frootc_to_litr2c(:)               ! fine root C litterfall to litter 2 C (gC/m2/s)
+   real(r8), pointer :: frootc_to_litr3c(:)               ! fine root C litterfall to litter 3 C (gC/m2/s)
+   ! litterfall fluxes for prognostic crop model
+   real(r8), pointer :: grainc_to_litr1c(:)               ! grain C litterfall to litter 1 C (gC/m2/s)
+   real(r8), pointer :: grainc_to_litr2c(:)               ! grain C litterfall to litter 2 C (gC/m2/s)
+   real(r8), pointer :: grainc_to_litr3c(:)               ! grain C litterfall to litter 3 C (gC/m2/s)
    ! decomposition fluxes
-   real(r8), pointer :: decomp_cascade_hr_vr(:,:,:)            ! vertically-resolved het. resp. from decomposing C pools (gC/m3/s)
-   real(r8), pointer :: decomp_cascade_hr(:,:)                 ! vertically-integrated (diagnostic) het. resp. from decomposing C pools (gC/m2/s)
-   real(r8), pointer :: decomp_cascade_ctransfer_vr(:,:,:)     ! vertically-resolved C transferred along deomposition cascade (gC/m3/s)
-   real(r8), pointer :: decomp_cascade_ctransfer(:,:)          ! vertically-integrated (diagnostic) C transferred along deomposition cascade (gC/m2/s)
-   real(r8), pointer :: decomp_cpools_sourcesink(:,:,:)        ! (gC/m3/timestep)  change in decomposing c pools.  Used to update concentrations concurrently with vertical transport
-   real(r8), pointer :: decomp_k(:,:,:)                        ! rate constant for decomposition (1./sec)
-   real(r8), pointer :: hr_vr(:,:)                             ! total vertically-resolved het. resp. from decomposing C pools (gC/m3/s)
-   real(r8), pointer :: o_scalar(:,:)                          ! fraction by which decomposition is limited by anoxia
-   real(r8), pointer :: w_scalar(:,:)                          ! fraction by which decomposition is limited by moisture availability
-   real(r8), pointer :: t_scalar(:,:)                          ! fraction by which decomposition is limited by temperature
-   real(r8), pointer :: som_c_leached(:)                           ! total SOM C loss from vertical transport (gC/m^2/s)
-   real(r8), pointer :: decomp_cpools_leached(:,:)                 ! C loss from vertical transport from each decomposing C pool (gC/m^2/s)
-   real(r8), pointer :: decomp_cpools_transport_tendency(:,:,:)    ! C tendency due to vertical transport in decomposing C pools (gC/m^3/s)
-   ! NITRIF_DENITRIF
-   real(r8), pointer :: phr_vr(:,:)                            ! potential hr (not N-limited) (gC/m3/s)
-   ! CN dynamic landcover fluxes
+   real(r8), pointer :: cwdc_to_litr2c(:)     ! decomp. of coarse woody debris C to litter 2 C (gC/m2/s)
+   real(r8), pointer :: cwdc_to_litr3c(:)     ! decomp. of coarse woody debris C to litter 3 C (gC/m2/s)
+   real(r8), pointer :: litr1_hr(:)           ! het. resp. from litter 1 C (gC/m2/s)
+   real(r8), pointer :: litr1c_to_soil1c(:)   ! decomp. of litter 1 C to SOM 1 C (gC/m2/s)
+   real(r8), pointer :: litr2_hr(:)           ! het. resp. from litter 2 C (gC/m2/s)
+   real(r8), pointer :: litr2c_to_soil2c(:)   ! decomp. of litter 2 C to SOM 2 C (gC/m2/s)
+   real(r8), pointer :: litr3_hr(:)           ! het. resp. from litter 3 C (gC/m2/s)
+   real(r8), pointer :: litr3c_to_soil3c(:)   ! decomp. of litter 3 C to SOM 3 C (gC/m2/s)
+   real(r8), pointer :: soil1_hr(:)           ! het. resp. from SOM 1 C (gC/m2/s)
+   real(r8), pointer :: soil1c_to_soil2c(:)   ! decomp. of SOM 1 C to SOM 2 C (gC/m2/s)
+   real(r8), pointer :: soil2_hr(:)           ! het. resp. from SOM 2 C (gC/m2/s)
+   real(r8), pointer :: soil2c_to_soil3c(:)   ! decomp. of SOM 2 C to SOM 3 C (gC/m2/s)
+   real(r8), pointer :: soil3_hr(:)           ! het. resp. from SOM 3 C (gC/m2/s)
+   real(r8), pointer :: soil3c_to_soil4c(:)   ! decomp. of SOM 3 C to SOM 4 C (gC/m2/s)
+   real(r8), pointer :: soil4_hr(:)           ! het. resp. from SOM 4 C (gC/m2/s)
+   ! dynamic landcover fluxes
    real(r8), pointer :: dwt_seedc_to_leaf(:)      ! (gC/m2/s) seed source to PFT-level
    real(r8), pointer :: dwt_seedc_to_deadstem(:)  ! (gC/m2/s) seed source to PFT-level
    real(r8), pointer :: dwt_conv_cflux(:)         ! (gC/m2/s) conversion C flux (immediate loss to atm)
    real(r8), pointer :: dwt_prod10c_gain(:)       ! (gC/m2/s) addition to 10-yr wood product pool
    real(r8), pointer :: dwt_prod100c_gain(:)      ! (gC/m2/s) addition to 100-yr wood product pool
-   real(r8), pointer :: dwt_frootc_to_litr_met_c(:,:)   ! (gC/m3/s) fine root to litter due to landcover change
-   real(r8), pointer :: dwt_frootc_to_litr_cel_c(:,:)   ! (gC/m3/s) fine root to litter due to landcover change
-   real(r8), pointer :: dwt_frootc_to_litr_lig_c(:,:)   ! (gC/m3/s) fine root to litter due to landcover change
-   real(r8), pointer :: dwt_livecrootc_to_cwdc(:,:) ! (gC/m3/s) live coarse root to CWD due to landcover change
-   real(r8), pointer :: dwt_deadcrootc_to_cwdc(:,:) ! (gC/m3/s) dead coarse root to CWD due to landcover change
+   real(r8), pointer :: dwt_frootc_to_litr1c(:)   ! (gC/m2/s) fine root to litter due to landcover change
+   real(r8), pointer :: dwt_frootc_to_litr2c(:)   ! (gC/m2/s) fine root to litter due to landcover change
+   real(r8), pointer :: dwt_frootc_to_litr3c(:)   ! (gC/m2/s) fine root to litter due to landcover change
+   real(r8), pointer :: dwt_livecrootc_to_cwdc(:) ! (gC/m2/s) live coarse root to CWD due to landcover change
+   real(r8), pointer :: dwt_deadcrootc_to_cwdc(:) ! (gC/m2/s) dead coarse root to CWD due to landcover change
    real(r8), pointer :: dwt_closs(:)              ! (gC/m2/s) total carbon loss from product pools and conversion
    real(r8), pointer :: landuseflux(:)            ! (gC/m2/s) dwt_closs+product_closs
    real(r8), pointer :: landuptake(:)             ! (gC/m2/s) nee-landuseflux
-   ! CN wood product pool loss fluxes
+   ! wood product pool loss fluxes
    real(r8), pointer :: prod10c_loss(:)           ! (gC/m2/s) decomposition loss from 10-yr wood product pool
    real(r8), pointer :: prod100c_loss(:)          ! (gC/m2/s) decomposition loss from 100-yr wood product pool
    real(r8), pointer :: product_closs(:)          ! (gC/m2/s) total wood product carbon loss
@@ -1846,7 +1520,7 @@ type, public :: column_cflux_type
    real(r8), pointer :: nee(:)           ! (gC/m2/s) net ecosystem exchange of carbon, includes fire, landuse, harvest, and hrv_xsmrpool flux, positive for source
    real(r8), pointer :: col_cinputs(:)   ! (gC/m2/s) total column-level carbon inputs (for balance check)
    real(r8), pointer :: col_coutputs(:)  ! (gC/m2/s) total column-level carbon outputs (for balance check) 
-   ! CN CLAMP summary (diagnostic) flux variables, not involved in mass balance
+   ! CLAMP summary (diagnostic) flux variables, not involved in mass balance
    real(r8), pointer :: cwdc_hr(:)       ! (gC/m2/s) col-level coarse woody debris C heterotrophic respiration
    real(r8), pointer :: cwdc_loss(:)     ! (gC/m2/s) col-level coarse woody debris C loss
    real(r8), pointer :: litterc_loss(:)  ! (gC/m2/s) col-level litter C loss
@@ -1854,9 +1528,8 @@ type, public :: column_cflux_type
    real(r8), pointer :: col_fire_closs(:) ! (gC/m2/s) total column-level fire C loss
 end type column_cflux_type
 
-type(column_cflux_type), target :: ccf    ! column carbon flux
-type(column_cflux_type), target :: cc13f  ! column carbon-13 flux
-type(column_cflux_type), target :: cc14f  ! column carbon-14 flux
+type(column_cflux_type) :: ccf       ! column carbon flux
+type(column_cflux_type) :: cc13f  ! column carbon-13 flux
 
 !----------------------------------------------------
 ! column nitrogen flux variables structure
@@ -1866,140 +1539,131 @@ type, public :: column_nflux_type
    ! deposition fluxes
    real(r8), pointer :: ndep_to_sminn(:)                   ! atmospheric N deposition to soil mineral N (gN/m2/s)
    real(r8), pointer :: nfix_to_sminn(:)                   ! symbiotic/asymbiotic N fixation to soil mineral N (gN/m2/s) 
-   real(r8), pointer :: fert_to_sminn(:)                   ! fertilizer N to soil mineral N (gN/m2/s)
-   real(r8), pointer :: soyfixn_to_sminn(:)                ! soybean fixation to soil mineral N (gN/m2/s)
-   ! phenology: litterfall and crop fluxes
-   real(r8), pointer :: phenology_n_to_litr_met_n(:,:)             ! N fluxes associated with phenology (litterfall and crop) to litter metabolic pool (gN/m3/s)
-   real(r8), pointer :: phenology_n_to_litr_cel_n(:,:)             ! N fluxes associated with phenology (litterfall and crop) to litter cellulose pool (gN/m3/s)
-   real(r8), pointer :: phenology_n_to_litr_lig_n(:,:)             ! N fluxes associated with phenology (litterfall and crop) to litter lignin pool (gN/m3/s)
-   ! gap mortality
-   real(r8), pointer :: gap_mortality_n_to_litr_met_n(:,:)         ! N fluxes associated with gap mortality to litter metabolic pool (gN/m3/s)
-   real(r8), pointer :: gap_mortality_n_to_litr_cel_n(:,:)         ! N fluxes associated with gap mortality to litter cellulose pool (gN/m3/s)
-   real(r8), pointer :: gap_mortality_n_to_litr_lig_n(:,:)         ! N fluxes associated with gap mortality to litter lignin pool (gN/m3/s)
-   real(r8), pointer :: gap_mortality_n_to_cwdn(:,:)               ! N fluxes associated with gap mortality to CWD pool (gN/m3/s)
-   ! fire
-   real(r8), pointer :: fire_mortality_n_to_cwdn(:,:)              ! N fluxes associated with fire mortality to CWD pool (gN/m3/s)
-   ! harvest
-   real(r8), pointer :: harvest_n_to_litr_met_n(:,:)               ! N fluxes associated with harvest to litter metabolic pool (gN/m3/s)
-   real(r8), pointer :: harvest_n_to_litr_cel_n(:,:)               ! N fluxes associated with harvest to litter cellulose pool (gN/m3/s)
-   real(r8), pointer :: harvest_n_to_litr_lig_n(:,:)               ! N fluxes associated with harvest to litter lignin pool (gN/m3/s)
-   real(r8), pointer :: harvest_n_to_cwdn(:,:)                     ! N fluxes associated with harvest to CWD pool (gN/m3/s)
-   !
-   real(r8), pointer :: hrv_deadstemn_to_prod10n(:)                ! dead stem N harvest mortality to 10-year product pool (gN/m2/s)
-   real(r8), pointer :: hrv_deadstemn_to_prod100n(:)               ! dead stem N harvest mortality to 100-year product pool (gN/m2/s)
-   real(r8), pointer :: m_decomp_npools_to_fire_vr(:,:,:)          ! vertically-resolved decomposing N fire loss (gN/m3/s)
-   real(r8), pointer :: m_decomp_npools_to_fire(:,:)               ! vertically-integrated (diagnostic) decomposing N fire loss (gN/m2/s)
-   ! column-level fire N fluxes added by F. Li and S. Levis
-   real(r8), pointer :: m_n_to_litr_met_fire(:,:)        ! N from leaf, froot, xfer and storage N to litter labile N by fire (gN/m3/s) 
-   real(r8), pointer :: m_n_to_litr_cel_fire(:,:)        ! N from leaf, froot, xfer and storage N to litter cellulose N by fire (gN/m3/s) 
-   real(r8), pointer :: m_n_to_litr_lig_fire(:,:)        ! N from leaf, froot, xfer and storage N to litter lignin N by fire (gN/m3/s) 
-
+   ! column-level gap mortality fluxes
+   real(r8), pointer :: m_leafn_to_litr1n(:)               ! leaf N mortality to litter 1 N (gC/m2/s)
+   real(r8), pointer :: m_leafn_to_litr2n(:)               ! leaf N mortality to litter 2 N (gC/m2/s)
+   real(r8), pointer :: m_leafn_to_litr3n(:)               ! leaf N mortality to litter 3 N (gC/m2/s)
+   real(r8), pointer :: m_frootn_to_litr1n(:)              ! fine root N mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_frootn_to_litr2n(:)              ! fine root N mortality to litter 2 N (gN/m2/s)
+   real(r8), pointer :: m_frootn_to_litr3n(:)              ! fine root N mortality to litter 3 N (gN/m2/s)
+   real(r8), pointer :: m_livestemn_to_cwdn(:)             ! live stem N mortality to coarse woody debris N (gN/m2/s)
+   real(r8), pointer :: m_deadstemn_to_cwdn(:)             ! dead stem N mortality to coarse woody debris N (gN/m2/s)
+   real(r8), pointer :: m_livecrootn_to_cwdn(:)            ! live coarse root N mortality to coarse woody debris N (gN/m2/s)
+   real(r8), pointer :: m_deadcrootn_to_cwdn(:)            ! dead coarse root N mortality to coarse woody debris N (gN/m2/s)
+   real(r8), pointer :: m_retransn_to_litr1n(:)            ! retranslocated N pool mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_leafn_storage_to_litr1n(:)       ! leaf N storage mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_frootn_storage_to_litr1n(:)      ! fine root N storage mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_livestemn_storage_to_litr1n(:)   ! live stem N storage mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_deadstemn_storage_to_litr1n(:)   ! dead stem N storage mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_livecrootn_storage_to_litr1n(:)  ! live coarse root N storage mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_deadcrootn_storage_to_litr1n(:)  ! dead coarse root N storage mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_leafn_xfer_to_litr1n(:)          ! leaf N transfer mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_frootn_xfer_to_litr1n(:)         ! fine root N transfer mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_livestemn_xfer_to_litr1n(:)      ! live stem N transfer mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_deadstemn_xfer_to_litr1n(:)      ! dead stem N transfer mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_livecrootn_xfer_to_litr1n(:)     ! live coarse root N transfer mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: m_deadcrootn_xfer_to_litr1n(:)     ! dead coarse root N transfer mortality to litter 1 N (gN/m2/s)
+   ! column-level harvest fluxes
+   real(r8), pointer :: hrv_leafn_to_litr1n(:)               ! leaf N harvest mortality to litter 1 N (gC/m2/s)
+   real(r8), pointer :: hrv_leafn_to_litr2n(:)               ! leaf N harvest mortality to litter 2 N (gC/m2/s)
+   real(r8), pointer :: hrv_leafn_to_litr3n(:)               ! leaf N harvest mortality to litter 3 N (gC/m2/s)
+   real(r8), pointer :: hrv_frootn_to_litr1n(:)              ! fine root N harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_frootn_to_litr2n(:)              ! fine root N harvest mortality to litter 2 N (gN/m2/s)
+   real(r8), pointer :: hrv_frootn_to_litr3n(:)              ! fine root N harvest mortality to litter 3 N (gN/m2/s)
+   real(r8), pointer :: hrv_livestemn_to_cwdn(:)             ! live stem N harvest mortality to coarse woody debris N (gN/m2/s)
+   real(r8), pointer :: hrv_deadstemn_to_prod10n(:)          ! dead stem N harvest mortality to 10-year product pool (gN/m2/s)
+   real(r8), pointer :: hrv_deadstemn_to_prod100n(:)         ! dead stem N harvest mortality to 100-year product pool (gN/m2/s)
+   real(r8), pointer :: hrv_livecrootn_to_cwdn(:)            ! live coarse root N harvest mortality to coarse woody debris N (gN/m2/s)
+   real(r8), pointer :: hrv_deadcrootn_to_cwdn(:)            ! dead coarse root N harvest mortality to coarse woody debris N (gN/m2/s)
+   real(r8), pointer :: hrv_retransn_to_litr1n(:)            ! retranslocated N pool harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_leafn_storage_to_litr1n(:)       ! leaf N storage harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_frootn_storage_to_litr1n(:)      ! fine root N storage harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_livestemn_storage_to_litr1n(:)   ! live stem N storage harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_deadstemn_storage_to_litr1n(:)   ! dead stem N storage harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_livecrootn_storage_to_litr1n(:)  ! live coarse root N storage harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_deadcrootn_storage_to_litr1n(:)  ! dead coarse root N storage harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_leafn_xfer_to_litr1n(:)          ! leaf N transfer harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_frootn_xfer_to_litr1n(:)         ! fine root N transfer harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_livestemn_xfer_to_litr1n(:)      ! live stem N transfer harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_deadstemn_xfer_to_litr1n(:)      ! dead stem N transfer harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_livecrootn_xfer_to_litr1n(:)     ! live coarse root N transfer harvest mortality to litter 1 N (gN/m2/s)
+   real(r8), pointer :: hrv_deadcrootn_xfer_to_litr1n(:)     ! dead coarse root N transfer harvest mortality to litter 1 N (gN/m2/s)
+   ! column-level fire fluxes
+   real(r8), pointer :: m_deadstemn_to_cwdn_fire(:)        ! dead stem N to coarse woody debris N by fire (gN/m2/s)
+   real(r8), pointer :: m_deadcrootn_to_cwdn_fire(:)       ! dead coarse root N to to woody debris N by fire (gN/m2/s)
+   real(r8), pointer :: m_litr1n_to_fire(:)                ! litter 1 N fire loss (gN/m2/s)
+   real(r8), pointer :: m_litr2n_to_fire(:)                ! litter 2 N fire loss (gN/m2/s)
+   real(r8), pointer :: m_litr3n_to_fire(:)                ! litter 3 N fire loss (gN/m2/s)
+   real(r8), pointer :: m_cwdn_to_fire(:)                  ! coarse woody debris N fire loss (gN/m2/s)
+   ! litterfall fluxes
+   real(r8), pointer :: livestemn_to_litr1n(:)   ! livestem N litterfall to litter 1 N (gN/m2/s)
+   real(r8), pointer :: livestemn_to_litr2n(:)   ! livestem N litterfall to litter 2 N (gN/m2/s)
+   real(r8), pointer :: livestemn_to_litr3n(:)   ! livestem N litterfall to litter 3 N (gN/m2/s)
+   real(r8), pointer :: leafn_to_litr1n(:)       ! leaf N litterfall to litter 1 N (gN/m2/s)
+   real(r8), pointer :: leafn_to_litr2n(:)       ! leaf N litterfall to litter 2 N (gN/m2/s)
+   real(r8), pointer :: leafn_to_litr3n(:)       ! leaf N litterfall to litter 3 N (gN/m2/s)
+   real(r8), pointer :: frootn_to_litr1n(:)      ! fine root N litterfall to litter 1 N (gN/m2/s)
+   real(r8), pointer :: frootn_to_litr2n(:)      ! fine root N litterfall to litter 2 N (gN/m2/s)
+   real(r8), pointer :: frootn_to_litr3n(:)      ! fine root N litterfall to litter 3 N (gN/m2/s)
+   ! litterfall fluxes for prognostic crop model
+   real(r8), pointer :: grainn_to_litr1n(:)      ! grain N litterfall to litter 1 N (gN/m2/s)
+   real(r8), pointer :: grainn_to_litr2n(:)      ! grain N litterfall to litter 2 N (gN/m2/s)
+   real(r8), pointer :: grainn_to_litr3n(:)      ! grain N litterfall to litter 3 N (gN/m2/s)
    ! decomposition fluxes
-   real(r8), pointer :: decomp_cascade_ntransfer_vr(:,:,:)    ! vert-res transfer of N from donor to receiver pool along decomp. cascade (gN/m3/s)
-   real(r8), pointer :: decomp_cascade_ntransfer(:,:)         ! vert-int (diagnostic) transfer of N from donor to receiver pool along decomp. cascade (gN/m2/s)
-   real(r8), pointer :: decomp_cascade_sminn_flux_vr(:,:,:)   ! vert-res mineral N flux for transition along decomposition cascade (gN/m3/s)
-   real(r8), pointer :: decomp_cascade_sminn_flux(:,:)        ! vert-int (diagnostic) mineral N flux for transition along decomposition cascade (gN/m2/s)
-   real(r8), pointer :: decomp_npools_sourcesink(:,:,:)       ! (gN/m3)  change in decomposing n pools (sum of all additions and subtractions from stateupdate1).  Used to update concentrations concurrently with vertical transport
-   ! vertically-resolved immobilization fluxes
-   real(r8), pointer :: potential_immob_vr(:,:)       ! vertically-resolved potential N immobilization (gN/m3/s) at each level
-   real(r8), pointer :: potential_immob(:)            ! vert-int (diagnostic) potential N immobilization (gN/m2/s)
-   real(r8), pointer :: actual_immob_vr(:,:)          ! vertically-resolved actual N immobilization (gN/m3/s) at each level
-   real(r8), pointer :: actual_immob(:)               ! vert-int (diagnostic) actual N immobilization (gN/m2/s)
-   real(r8), pointer :: sminn_to_plant_vr(:,:)        ! vertically-resolved plant uptake of soil mineral N (gN/m3/s)
-   real(r8), pointer :: sminn_to_plant(:)             ! vert-int (diagnostic) plant uptake of soil mineral N (gN/m2/s)
-   real(r8), pointer :: supplement_to_sminn_vr(:,:)   ! vertically-resolved supplemental N supply (gN/m3/s)
-   real(r8), pointer :: supplement_to_sminn(:)        ! vert-int (diagnostic) supplemental N supply (gN/m2/s)
-   real(r8), pointer :: gross_nmin_vr(:,:)            ! vertically-resolved gross rate of N mineralization (gN/m3/s)
-   real(r8), pointer :: gross_nmin(:)                 ! vert-int (diagnostic) gross rate of N mineralization (gN/m2/s)
-   real(r8), pointer :: net_nmin_vr(:,:)              ! vertically-resolved net rate of N mineralization (gN/m3/s)
-   real(r8), pointer :: net_nmin(:)                   ! vert-int (diagnostic) net rate of N mineralization (gN/m2/s)
-   ! NITRIF_DENITRIF
-   ! nitrification / denitrification fluxes
-   real(r8), pointer :: f_nit_vr(:,:)              ! (gN/m3/s) soil nitrification flux
-   real(r8), pointer :: f_denit_vr(:,:)            ! (gN/m3/s) soil denitrification flux
-   real(r8), pointer :: f_nit(:)                   ! (gN/m2/s) soil nitrification flux
-   real(r8), pointer :: f_denit(:)                 ! (gN/m2/s) soil denitrification flux
-
-   real(r8), pointer :: pot_f_nit_vr(:,:)          ! (gN/m3/s) potential soil nitrification flux
-   real(r8), pointer :: pot_f_denit_vr(:,:)        ! (gN/m3/s) potential soil denitrification flux
-   real(r8), pointer :: pot_f_nit(:)               ! (gN/m2/s) potential soil nitrification flux
-   real(r8), pointer :: pot_f_denit(:)             ! (gN/m2/s) potential soil denitrification flux
-   real(r8), pointer :: n2_n2o_ratio_denit_vr(:,:)    ! ratio of N2 to N2O production by denitrification [gN/gN]
-   real(r8), pointer :: f_n2o_denit_vr(:,:)        ! flux of N2o from denitrification [gN/m^3/s]
-   real(r8), pointer :: f_n2o_denit(:)             ! flux of N2o from denitrification [gN/m^2/s]
-   real(r8), pointer :: f_n2o_nit_vr(:,:)          ! flux of N2o from nitrification [gN/m^3/s]
-   real(r8), pointer :: f_n2o_nit(:)               ! flux of N2o from nitrification [gN/m^2/s]
-
-   ! immobilization / uptake fluxes
-   real(r8), pointer :: actual_immob_no3_vr(:,:)   ! vertically-resolved actual immobilization of NO3 (gN/m3/s)
-   real(r8), pointer :: actual_immob_nh4_vr(:,:)   ! vertically-resolved actual immobilization of NH4 (gN/m3/s)
-   real(r8), pointer :: smin_no3_to_plant_vr(:,:)  ! vertically-resolved plant uptake of soil NO3 (gN/m3/s)
-   real(r8), pointer :: smin_nh4_to_plant_vr(:,:)  ! vertically-resolved plant uptake of soil NH4 (gN/m3/s)
-   real(r8), pointer :: actual_immob_no3(:)        ! actual immobilization of NO3 (gN/m2/s)
-   real(r8), pointer :: actual_immob_nh4(:)        ! actual immobilization of NH4 (gN/m2/s)
-   real(r8), pointer :: smin_no3_to_plant(:)       ! plant uptake of soil NO3 (gN/m2/s)
-   real(r8), pointer :: smin_nh4_to_plant(:)       ! plant uptake of soil Nh4 (gN/m2/s)
-   ! leaching fluxes
-   real(r8), pointer :: smin_no3_leached_vr(:,:)    ! vertically-resolved soil mineral NO3 loss to leaching (gN/m3/s)
-   real(r8), pointer :: smin_no3_leached(:)         ! soil mineral NO3 pool loss to leaching (gN/m2/s)
-   real(r8), pointer :: smin_no3_runoff_vr(:,:)     ! vertically-resolved rate of mineral NO3 loss with runoff (gN/m3/s)
-   real(r8), pointer :: smin_no3_runoff(:)          ! soil mineral NO3 pool loss to runoff (gN/m2/s)
-
-   ! NITRIF_DENITRIF diagnostic quantities
-   real(r8), pointer :: smin_no3_massdens_vr(:,:)      ! (ugN / g soil) soil nitrate concentration
-   real(r8), pointer :: soil_bulkdensity(:,:)          ! (kg soil / m3) bulk density of soil
-   real(r8), pointer :: k_nitr_t_vr(:,:)
-   real(r8), pointer :: k_nitr_ph_vr(:,:)
-   real(r8), pointer :: k_nitr_h2o_vr(:,:)
-   real(r8), pointer :: k_nitr_vr(:,:)
-   real(r8), pointer :: wfps_vr(:,:)
-   real(r8), pointer :: fmax_denit_carbonsubstrate_vr(:,:)
-   real(r8), pointer :: fmax_denit_nitrate_vr(:,:)
-   real(r8), pointer :: f_denit_base_vr(:,:)   ! nitrification and denitrification fluxes
-   real(r8), pointer :: diffus(:,:) !diffusivity (m2/s)
-   real(r8), pointer :: ratio_k1(:,:)
-   real(r8), pointer :: ratio_no3_co2(:,:)
-   real(r8), pointer :: soil_co2_prod(:,:)
-   real(r8), pointer :: fr_WFPS(:,:)
-
-   real(r8), pointer :: r_psi(:,:)
-   real(r8), pointer :: anaerobic_frac(:,:)
-   ! no NITRIF_DENITRIF
+   real(r8), pointer :: cwdn_to_litr2n(:)        ! decomp. of coarse woody debris N to litter 2 N (gN/m2/s)
+   real(r8), pointer :: cwdn_to_litr3n(:)        ! decomp. of coarse woody debris N to litter 3 N (gN/m2/s)
+   real(r8), pointer :: litr1n_to_soil1n(:)      ! decomp. of litter 1 N to SOM 1 N (gN/m2/s)
+   real(r8), pointer :: sminn_to_soil1n_l1(:)    ! mineral N flux for decomp. of litter 1 to SOM 1 (gN/m2/s)
+   real(r8), pointer :: litr2n_to_soil2n(:)      ! decomp. of litter 2 N to SOM 2 N (gN/m2/s)
+   real(r8), pointer :: sminn_to_soil2n_l2(:)    ! mineral N flux for decomp. of litter 2 to SOM 2 (gN/m2/s)
+   real(r8), pointer :: litr3n_to_soil3n(:)      ! decomp. of litter 3 N to SOM 3 N (gN/m2/s)
+   real(r8), pointer :: sminn_to_soil3n_l3(:)    ! mineral N flux for decomp. of litter 3 to SOM 3 (gN/m2/s)
+   real(r8), pointer :: soil1n_to_soil2n(:)      ! decomp. of SOM 1 N to SOM 2 N (gN/m2/s)
+   real(r8), pointer :: sminn_to_soil2n_s1(:)    ! mineral N flux for decomp. of SOM 1 to SOM 2 (gN/m2/s)
+   real(r8), pointer :: soil2n_to_soil3n(:)      ! decomp. of SOM 2 N to SOM 3 N (gN/m2/s)
+   real(r8), pointer :: sminn_to_soil3n_s2(:)    ! mineral N flux for decomp. of SOM 2 to SOM 3 (gN/m2/s)
+   real(r8), pointer :: soil3n_to_soil4n(:)      ! decomp. of SOM 3 N to SOM 4 N (gN/m2/s)
+   real(r8), pointer :: sminn_to_soil4n_s3(:)    ! mineral N flux for decomp. of SOM 3 to SOM 4 (gN/m2/s)
+   real(r8), pointer :: soil4n_to_sminn(:)       ! N mineralization for decomp. of SOM 4 (gN/m2/s)
    ! denitrification fluxes
-   real(r8), pointer :: sminn_to_denit_decomp_cascade_vr(:,:,:)   ! vertically-resolved denitrification along decomp cascade (gN/m3/s) 
-   real(r8), pointer :: sminn_to_denit_decomp_cascade(:,:)        ! vertically-integrated (diagnostic) denitrification along decomp cascade (gN/m2/s) 
-   real(r8), pointer :: sminn_to_denit_excess_vr(:,:)             ! vertically-resolved denitrification from excess mineral N pool (gN/m3/s)
-   real(r8), pointer :: sminn_to_denit_excess(:)                  ! vertically-integrated (diagnostic) denitrification from excess mineral N pool (gN/m2/s)
+   real(r8), pointer :: sminn_to_denit_l1s1(:)   ! denitrification for decomp. of litter 1 to SOM 1 (gN/m2/s) 
+   real(r8), pointer :: sminn_to_denit_l2s2(:)   ! denitrification for decomp. of litter 2 to SOM 2 (gN/m2/s)
+   real(r8), pointer :: sminn_to_denit_l3s3(:)   ! denitrification for decomp. of litter 3 to SOM 3 (gN/m2/s)
+   real(r8), pointer :: sminn_to_denit_s1s2(:)   ! denitrification for decomp. of SOM 1 to SOM 2 (gN/m2/s)
+   real(r8), pointer :: sminn_to_denit_s2s3(:)   ! denitrification for decomp. of SOM 2 to SOM 3 (gN/m2/s)
+   real(r8), pointer :: sminn_to_denit_s3s4(:)   ! denitrification for decomp. of SOM 3 to SOM 4 (gN/m2/s)
+   real(r8), pointer :: sminn_to_denit_s4(:)     ! denitrification for decomp. of SOM 4 (gN/m2/s)
+   real(r8), pointer :: sminn_to_denit_excess(:) ! denitrification from excess mineral N pool (gN/m2/s)
    ! leaching fluxes
-   real(r8), pointer :: sminn_leached_vr(:,:)                     ! vertically-resolved soil mineral N pool loss to leaching (gN/m3/s)
-   real(r8), pointer :: sminn_leached(:)                          ! soil mineral N pool loss to leaching (gN/m2/s)
-   !
+   real(r8), pointer :: sminn_leached(:)         ! soil mineral N pool loss to leaching (gN/m2/s)
    ! dynamic landcover fluxes
-   real(r8), pointer :: dwt_seedn_to_leaf(:)            ! (gN/m2/s) seed source to PFT-level
-   real(r8), pointer :: dwt_seedn_to_deadstem(:)        ! (gN/m2/s) seed source to PFT-level
-   real(r8), pointer :: dwt_conv_nflux(:)               ! (gN/m2/s) conversion N flux (immediate loss to atm)
-   real(r8), pointer :: dwt_prod10n_gain(:)             ! (gN/m2/s) addition to 10-yr wood product pool
-   real(r8), pointer :: dwt_prod100n_gain(:)            ! (gN/m2/s) addition to 100-yr wood product pool
-   real(r8), pointer :: dwt_frootn_to_litr_met_n(:,:)   ! (gN/m3/s) fine root to litter due to landcover change
-   real(r8), pointer :: dwt_frootn_to_litr_cel_n(:,:)   ! (gN/m3/s) fine root to litter due to landcover change
-   real(r8), pointer :: dwt_frootn_to_litr_lig_n(:,:)   ! (gN/m3/s) fine root to litter due to landcover change
-   real(r8), pointer :: dwt_livecrootn_to_cwdn(:,:)     ! (gN/m3/s) live coarse root to CWD due to landcover change
-   real(r8), pointer :: dwt_deadcrootn_to_cwdn(:,:)     ! (gN/m3/s) dead coarse root to CWD due to landcover change
-   real(r8), pointer :: dwt_nloss(:)                    ! (gN/m2/s) total nitrogen loss from product pools and conversion
+   real(r8), pointer :: dwt_seedn_to_leaf(:)      ! (gN/m2/s) seed source to PFT-level
+   real(r8), pointer :: dwt_seedn_to_deadstem(:)  ! (gN/m2/s) seed source to PFT-level
+   real(r8), pointer :: dwt_conv_nflux(:)         ! (gN/m2/s) conversion N flux (immediate loss to atm)
+   real(r8), pointer :: dwt_prod10n_gain(:)       ! (gN/m2/s) addition to 10-yr wood product pool
+   real(r8), pointer :: dwt_prod100n_gain(:)      ! (gN/m2/s) addition to 100-yr wood product pool
+   real(r8), pointer :: dwt_frootn_to_litr1n(:)   ! (gN/m2/s) fine root to litter due to landcover change
+   real(r8), pointer :: dwt_frootn_to_litr2n(:)   ! (gN/m2/s) fine root to litter due to landcover change
+   real(r8), pointer :: dwt_frootn_to_litr3n(:)   ! (gN/m2/s) fine root to litter due to landcover change
+   real(r8), pointer :: dwt_livecrootn_to_cwdn(:) ! (gN/m2/s) live coarse root to CWD due to landcover change
+   real(r8), pointer :: dwt_deadcrootn_to_cwdn(:) ! (gN/m2/s) dead coarse root to CWD due to landcover change
+   real(r8), pointer :: dwt_nloss(:)              ! (gN/m2/s) total nitrogen loss from product pools and conversion
    ! wood product pool loss fluxes
-   real(r8), pointer :: prod10n_loss(:)                 ! (gN/m2/s) decomposition loss from 10-yr wood product pool
-   real(r8), pointer :: prod100n_loss(:)                ! (gN/m2/s) decomposition loss from 100-yr wood product pool
-   real(r8), pointer :: product_nloss(:)                ! (gN/m2/s) total wood product nitrogen loss
+   real(r8), pointer :: prod10n_loss(:)           ! (gN/m2/s) decomposition loss from 10-yr wood product pool
+   real(r8), pointer :: prod100n_loss(:)          ! (gN/m2/s) decomposition loss from 100-yr wood product pool
+   real(r8), pointer :: product_nloss(:)          ! (gN/m2/s) total wood product nitrogen loss
    ! summary (diagnostic) flux variables, not involved in mass balance
-   real(r8), pointer :: denit(:)                        ! total rate of denitrification (gN/m2/s)
-   real(r8), pointer :: col_ninputs(:)                  ! column-level N inputs (gN/m2/s)
-   real(r8), pointer :: col_noutputs(:)                 ! column-level N outputs (gN/m2/s)
+   real(r8), pointer :: potential_immob(:)       ! potential N immobilization (gN/m2/s)
+   real(r8), pointer :: actual_immob(:)          ! actual N immobilization (gN/m2/s)
+   real(r8), pointer :: sminn_to_plant(:)        ! plant uptake of soil mineral N (gN/m2/s)
+   real(r8), pointer :: supplement_to_sminn(:)   ! supplemental N supply (gN/m2/s)
+   real(r8), pointer :: gross_nmin(:)            ! gross rate of N mineralization (gN/m2/s)
+   real(r8), pointer :: net_nmin(:)              ! net rate of N mineralization (gN/m2/s)
+   real(r8), pointer :: denit(:)                 ! total rate of denitrification (gN/m2/s)
+   real(r8), pointer :: col_ninputs(:)           ! column-level N inputs (gN/m2/s)
+   real(r8), pointer :: col_noutputs(:)          ! column-level N outputs (gN/m2/s)
    ! new variables for fire
-   real(r8), pointer :: col_fire_nloss(:)               ! total column-level fire N loss (gN/m2/s)
-
-   real(r8), pointer :: som_n_leached(:)                           ! total SOM N loss from vertical transport (gN/m^2/s)
-   real(r8), pointer :: decomp_npools_leached(:,:)                 ! N loss from vertical transport from each decomposing N pool (gN/m^2/s)
-   real(r8), pointer :: decomp_npools_transport_tendency(:,:,:)    ! N tendency due to vertical transport in decomposing N pools (gN/m^3/s)
+   real(r8), pointer :: col_fire_nloss(:)        ! total column-level fire N loss (gN/m2/s)
 end type column_nflux_type
 
 type(column_nflux_type) :: cnf       !column nitrogen flux
@@ -2021,10 +1685,11 @@ end type column_dflux_type
 !----------------------------------------------------
 ! Begin definition of structures defined at the landunit_type level
 !----------------------------------------------------
+!----------------------------------------------------
 ! landunit physical state variables structure
+!----------------------------------------------------
 ! note - landunit type can be vegetated (includes bare soil), deep lake, 
 ! shallow lake, wetland, glacier or urban
-!----------------------------------------------------
 type, public :: landunit_pstate_type
    ! Urban variables
    real(r8), pointer :: t_building(:)         ! internal building temperature (K)
@@ -2038,7 +1703,7 @@ type, public :: landunit_pstate_type
    real(r8), pointer :: cv_improad(:,:)       ! heat capacity of urban impervious road (J/m^3/K)
    real(r8), pointer :: thick_wall(:)         ! total thickness of urban wall (m)
    real(r8), pointer :: thick_roof(:)         ! total thickness of urban roof (m)
-   integer, pointer :: nlev_improad(:)        ! number of impervious road layers (-)
+   integer , pointer :: nlev_improad(:)       ! number of impervious road layers (-)
    real(r8), pointer :: vf_sr(:)              ! view factor of sky for road
    real(r8), pointer :: vf_wr(:)              ! view factor of one wall for road
    real(r8), pointer :: vf_sw(:)              ! view factor of sky for one wall
@@ -2059,7 +1724,6 @@ type, public :: landunit_pstate_type
 end type landunit_pstate_type
 
 type(landunit_pstate_type) :: lps     !land unit physical state variables
-type(column_pstate_type)   :: cps_a   !column-level physical state variables averaged to landunit
 
 !----------------------------------------------------
 ! landunit energy flux variables structure
@@ -2073,7 +1737,6 @@ type, public :: landunit_eflux_type
 end type landunit_eflux_type
 
 type(landunit_eflux_type) :: lef     ! average of energy fluxes all columns
-type(column_eflux_type)   :: cef_a   ! column-level energy flux variables averaged to landunit
 
 !----------------------------------------------------
 ! End definition of structures defined at the landunit_type level
@@ -2119,17 +1782,7 @@ type, public :: gridcell_cstate_type
    real(r8), pointer :: dummy_entry(:)
 end type gridcell_cstate_type
 
-!----------------------------------------------------
-! gridcell CH4 flux variables structure
-!----------------------------------------------------
-type, public :: gridcell_ch4_type
-   real(r8), pointer :: c_atm(:,:)     !atmospheric conc of CH4, O2, CO2 (mol/m3)
-   real(r8), pointer :: ch4co2f(:)     !gridcell CO2 production from CH4 oxidation (g C/m**2/s)
-   real(r8), pointer :: ch4prodg(:)    !gridcell average CH4 production (g C/m^2/s)
-   real(r8), pointer :: nem(:)         !gridcell average net methane correction to CO2 flux (g C/m^2/s)
-end type gridcell_ch4_type
-
-type(gridcell_ch4_type)   :: gch4    !average of CH4 fluxes all landunits
+type(column_cstate_type):: ccs_a            !column-level carbon state variables averaged to gridcell
 
 !----------------------------------------------------
 ! gridcell nitrogen state variables structure
@@ -2138,6 +1791,7 @@ type, public :: gridcell_nstate_type
    real(r8), pointer :: dummy_entry(:)
 end type gridcell_nstate_type
 
+type(column_nstate_type):: cns_a            !column-level nitrogen state variables averaged to gridcell
 
 !----------------------------------------------------
 ! gridcell VOC state variables structure
@@ -2152,9 +1806,8 @@ type(column_vstate_type):: cvs_a            !column-level VOC state variables av
 ! gridcell VOC emission factor variables structure (heald)
 !----------------------------------------------------
 type, public :: gridcell_efstate_type
-   real(r8), pointer  :: efisop(:,:)   ! isoprene emission factors
+   real(r8), pointer :: efisop(:,:)    ! isoprene emission factors
 end type gridcell_efstate_type
-
 type(gridcell_efstate_type):: gve	!gridcell VOC emission factors
 
 !----------------------------------------------------
@@ -2231,28 +1884,19 @@ end type gridcell_dflux_type
 !----------------------------------------------------
 !*******************************************************************************
 
-
 !*******************************************************************************
-!----------------------------------------------------
-! Begin definition of spatial scaling hierarchy
-!----------------------------------------------------
-
 !----------------------------------------------------
 ! define the pft structure
 !----------------------------------------------------
-
 type, public :: pft_type
-   ! g/l/c/p hierarchy, local g/l/c/p cells only
    integer , pointer :: column(:)       !index into column level quantities
    real(r8), pointer :: wtcol(:)        !weight (relative to column) 
    integer , pointer :: landunit(:)     !index into landunit level quantities
    real(r8), pointer :: wtlunit(:)      !weight (relative to landunit) 
    integer , pointer :: gridcell(:)     !index into gridcell level quantities
    real(r8), pointer :: wtgcell(:)      !weight (relative to gridcell) 
-   ! topological mapping functionality
    integer , pointer :: itype(:)        !pft vegetation 
    integer , pointer :: mxy(:)          !m index for laixy(i,j,m),etc.
-   logical , pointer :: active(:)       !true=>do computations on this pft (see reweightMod for details)
 end type pft_type
 
 type(pft_type), target :: pft  !plant functional type (pft) data structure 
@@ -2260,9 +1904,7 @@ type(pft_type), target :: pft  !plant functional type (pft) data structure
 !----------------------------------------------------
 ! define the column structure
 !----------------------------------------------------
-
 type, public :: column_type
-   ! g/l/c/p hierarchy, local g/l/c/p cells only
    integer , pointer :: landunit(:)     !index into landunit level quantities
    real(r8), pointer :: wtlunit(:)      !weight (relative to landunit)
    integer , pointer :: gridcell(:)     !index into gridcell level quantities
@@ -2270,9 +1912,7 @@ type, public :: column_type
    integer , pointer :: pfti(:)         !beginning pft index for each column
    integer , pointer :: pftf(:)         !ending pft index for each column
    integer , pointer :: npfts(:)        !number of pfts for each column
-   ! topological mapping functionality
    integer , pointer :: itype(:)        !column type
-   logical , pointer :: active(:)       !true=>do computations on this column (see reweightMod for details)
 end type column_type
 
 type(column_type), target :: col !column data structure (soil/snow/canopy columns)
@@ -2280,9 +1920,7 @@ type(column_type), target :: col !column data structure (soil/snow/canopy column
 !----------------------------------------------------
 ! define the geomorphological land unit structure
 !----------------------------------------------------
-
 type, public :: landunit_type
-   ! g/l/c/p hierarchy, local g/l/c/p cells only
    integer , pointer :: gridcell(:)       !index into gridcell level quantities
    real(r8), pointer :: wtgcell(:)        !weight (relative to gridcell)
    integer , pointer :: coli(:)           !beginning column index per landunit
@@ -2291,6 +1929,11 @@ type, public :: landunit_type
    integer , pointer :: pfti(:)           !beginning pft index for each landunit
    integer , pointer :: pftf(:)           !ending pft index for each landunit
    integer , pointer :: npfts(:)          !number of pfts for each landunit
+   integer , pointer :: itype(:)          !landunit type
+   logical , pointer :: ifspecial(:)      !BOOL: true=>landunit is not vegetated
+   logical , pointer :: lakpoi(:)         !BOOL: true=>lake point
+   logical , pointer :: urbpoi(:)         !BOOL: true=>urban point
+   logical , pointer :: glcmecpoi(:)      !BOOL: true=>glacier_mec point
 
    ! Urban canyon related properties
    real(r8), pointer :: canyon_hwr(:)     ! urban landunit canyon height to width ratio (-)   
@@ -2302,15 +1945,6 @@ type, public :: landunit_type
    real(r8), pointer :: wind_hgt_canyon(:)! height above road at which wind in canyon is to be computed (m)
    real(r8), pointer :: z_0_town(:)       ! urban landunit momentum roughness length (m)
    real(r8), pointer :: z_d_town(:)       ! urban landunit displacement height (m)
-   
-   ! topological mapping functionality
-   integer , pointer :: itype(:)        !landunit type
-   logical , pointer :: ifspecial(:)    !true=>landunit is not vegetated
-   logical , pointer :: lakpoi(:)       !true=>lake point
-   logical , pointer :: urbpoi(:)       !true=>urban point
-   logical , pointer :: glcmecpoi(:)    !true=>glacier_mec point
-   integer , pointer :: udenstype(:)    !urban density type
-   logical , pointer :: active(:)       !true=>do computations on this landunit (see reweightMod for details)
 end type landunit_type
 
 type(landunit_type), target :: lun  !geomorphological landunits
@@ -2318,20 +1952,16 @@ type(landunit_type), target :: lun  !geomorphological landunits
 !----------------------------------------------------
 ! define the gridcell structure
 !----------------------------------------------------
-
 type, public :: gridcell_type
-   ! g/l/c/p hierarchy, local g/l/c/p cells only
-   integer, pointer :: luni(:)          !beginning landunit index 
-   integer, pointer :: lunf(:)          !ending landunit index 
-   integer, pointer :: nlandunits(:)    !number of landunit for each gridcell
-   integer, pointer :: coli(:)          !beginning column index
-   integer, pointer :: colf(:)          !ending column index
-   integer, pointer :: ncolumns(:)      !number of columns for each gridcell
-   integer, pointer :: pfti(:)          !beginning pft index
-   integer, pointer :: pftf(:)          !ending pft index
-   integer, pointer :: npfts(:)         !number of pfts for each gridcell
-
-   ! topological mapping functionality, local 1d gdc arrays
+   integer , pointer :: luni(:)         !beginning landunit index 
+   integer , pointer :: lunf(:)         !ending landunit index 
+   integer , pointer :: nlandunits(:)   !number of landunit for each gridcell
+   integer , pointer :: coli(:)         !beginning column index
+   integer , pointer :: colf(:)         !ending column index
+   integer , pointer :: ncolumns(:)     !number of columns for each gridcell
+   integer , pointer :: pfti(:)         !beginning pft index
+   integer , pointer :: pftf(:)         !ending pft index
+   integer , pointer :: npfts(:)        !number of pfts for each gridcell
    integer , pointer :: gindex(:)       !global index
    real(r8), pointer :: area(:)         !total land area, gridcell (km^2)
    real(r8), pointer :: lat(:)          !latitude (radians)
@@ -2343,15 +1973,17 @@ type, public :: gridcell_type
    real(r8), pointer :: lon_a(:)        !"atm" longitude (radians) for albedo
    real(r8), pointer :: latdeg_a(:)     !"atm" latitude (degrees) for albedo
    real(r8), pointer :: londeg_a(:)     !"atm" longitude (degrees) for albedo
-
    real(r8), pointer :: gris_mask(:)    !Greenland ice sheet mask 
    real(r8), pointer :: gris_area(:)    !Greenland ice-covered area per gridcell (km^2)
    real(r8), pointer :: aais_mask(:)    !Antarctic ice sheet mask 
    real(r8), pointer :: aais_area(:)    !Antarctic ice-covered area per gridcell (km^2)
-   real(r8), pointer :: tws(:)          !total water storage (mm H2O)
 end type gridcell_type
 
 type(gridcell_type), target :: grc    !gridcell data structure
+
+!----------------------------------------------------
+! End definition of spatial scaling hierarchy
+!----------------------------------------------------
 
 character(len=16), parameter, public :: grlnd  = 'lndgrid'      ! name of lndgrid
 character(len=16), parameter, public :: namea  = 'gridcellatm'  ! name of atmgrid

@@ -16,7 +16,8 @@ module clm_initializeMod
   use shr_sys_mod     , only : shr_sys_flush
   use abortutils      , only : endrun
   use clm_varctl      , only : nsrest, nsrStartup, nsrContinue, nsrBranch, &
-                               create_glacier_mec_landunit, iulog
+                               create_glacier_mec_landunit, iulog, &
+                               use_cn, use_cndv
   use clm_varsur      , only : wtxy, vegxy, topoxy
   use perf_mod        , only : t_startf, t_stopf
   use ncdio_pio
@@ -71,7 +72,6 @@ contains
 ! !USES:
     use clmtypeInitMod  , only : initClmtype
     use clm_varpar      , only : maxpatch, clm_varpar_init
-    use clm_varcon      , only : clm_varcon_init
     use clm_varctl      , only : fsurdat, fatmlndfrc, flndtopo, fglcmask, noland 
     use pftvarcon       , only : pftconrd
     use decompInitMod   , only : decompInit_lnd, decompInit_glcp
@@ -85,9 +85,6 @@ contains
     use clm_atmlnd      , only : init_atm2lnd_type, init_lnd2atm_type, clm_a2l, clm_l2a
     use clm_glclnd      , only : init_glc2lnd_type, init_lnd2glc_type, clm_x2s, clm_s2x
     use initGridCellsMod, only : initGridCells
-
-
-
 !
 ! !ARGUMENTS:
 !
@@ -126,7 +123,6 @@ contains
 
     call control_init()
     call clm_varpar_init()
-    call clm_varcon_init()
     call ncd_pio_init()
 
     if (masterproc) call control_print()
@@ -217,13 +213,6 @@ contains
        call decompInit_glcp (ns, ni, nj)
     endif
 
-
-
-
-
-
-
-    call t_stopf('init_surdat')
     ! Allocate memory and initialize values of clmtype data structures
 
     call initClmtype()
@@ -276,8 +265,7 @@ contains
     use clm_glclnd      , only : create_clm_s2x
     use clm_varctl      , only : finidat, fpftdyn
     use decompMod       , only : get_proc_clumps, get_proc_bounds
-    use filterMod       , only : allocFilters
-    use reweightMod     , only : reweightWrapup
+    use filterMod       , only : allocFilters, setFilters
     use histFldsMod     , only : hist_initFlds
     use histFileMod     , only : hist_htapes_build, htapes_fieldlist
     use restFileMod     , only : restFile_getfile, &
@@ -285,6 +273,10 @@ contains
     use accFldsMod      , only : initAccFlds, initAccClmtype
     use mkarbinitMod    , only : mkarbinit
     use pftdynMod       , only : pftdyn_init, pftdyn_interp
+    use ndepStreamMod    , only : ndep_init, ndep_interp
+    use CNEcosystemDynMod, only : CNEcosystemDynInit
+    use pftdynMod             , only : pftwt_init
+    use CNDVEcosystemDynIniMod, only : CNDVEcosystemDynini
     use STATICEcosysDynMod , only : EcosystemDynini, readAnnualVegetation
     use STATICEcosysDynMod , only : interpMonthlyVeg
     use DUSTMod         , only : Dustini
@@ -295,9 +287,6 @@ contains
     use UrbanMod        , only : UrbanClumpInit
     use UrbanInitMod    , only : UrbanInitTimeConst, UrbanInitTimeVar, UrbanInitAero 
     use UrbanInputMod   , only : UrbanInput
-    use initSLakeMod    , only : initSLake
-    use clm_glclnd      , only : init_glc2lnd_type, init_lnd2glc_type, &
-                                 clm_x2s, clm_s2x
     use seq_drydep_mod  , only : n_drydep, drydep_method, DD_XLND
     use shr_orb_mod        , only : shr_orb_decl
     use initSurfAlbMod     , only : initSurfAlb, do_initsurfalb 
@@ -337,7 +326,6 @@ contains
     real(r8) :: declinm1              ! solar declination angle in radians for nstep-1
     real(r8) :: eccf                  ! earth orbit eccentricity factor
     character(len=32) :: subname = 'initialize2' ! subroutine name
-    logical           :: arbinit            ! Make arb init in initSLake
 !----------------------------------------------------------------------
 
     call t_startf('clm_init2')
@@ -351,7 +339,21 @@ contains
     ! Initialize Ecosystem Dynamics 
 
     call t_startf('init_ecosys')
-    call EcosystemDynini()
+    if (use_cndv) then
+       call CNDVEcosystemDynini()
+    else if (.not. use_cn) then
+       call EcosystemDynini()
+    end if
+
+    if (use_cn .or. use_cndv) then
+       ! --------------------------------------------------------------
+       ! Initialize CLMSP ecosystem dynamics when drydeposition is used
+       ! so that estimates of monthly differences in LAI can be computed
+       ! --------------------------------------------------------------
+       if ( n_drydep > 0 .and. drydep_method == DD_XLND )then
+          call EcosystemDynini()
+       end if
+    end if
     call t_stopf('init_ecosys')
 
     ! Initialize dust emissions model 
@@ -409,6 +411,9 @@ contains
     ! ------------------------------------------------------------------------
     ! Initialize CN Ecosystem Dynamics (must be after time-manager initialization)
     ! ------------------------------------------------------------------------
+    if (use_cn .or. use_cndv) then
+       call CNEcosystemDynInit( begc, endc, begp, endp )
+    end if
 
     ! ------------------------------------------------------------------------
     ! Initialize accumulated fields
@@ -427,6 +432,13 @@ contains
     ! used in coupled carbon-nitrogen code
     ! ------------------------------------------------------------------------
     
+    if (use_cn) then
+       call t_startf('init_cninitim')
+       if (nsrest == nsrStartup) then
+          call CNiniTimeVar()
+       end if
+       call t_stopf('init_cninitim')
+    end if
 
     ! ------------------------------------------------------------------------
     ! Initialization of dynamic pft weights
@@ -435,11 +447,15 @@ contains
     ! Determine correct pft weights (interpolate pftdyn dataset if initial run)
     ! Otherwise these are read in for a restart run
 
-    if (fpftdyn /= ' ') then
-       call t_startf('init_pftdyn')
-       call pftdyn_init()
-       call pftdyn_interp( )
-       call t_stopf('init_pftdyn')
+    if (use_cndv) then
+       call pftwt_init()
+    else
+       if (fpftdyn /= ' ') then
+          call t_startf('init_pftdyn')
+          call pftdyn_init()
+          call pftdyn_interp( )
+          call t_stopf('init_pftdyn')
+       end if
     end if
 
     ! ------------------------------------------------------------------------
@@ -453,23 +469,9 @@ contains
     if (do_restread()) then
        if (masterproc) write(iulog,*)'reading restart file ',fnamer
        call restFile_read( fnamer )
-
-       arbinit = .false.
-       call initSLake(arbinit)
     else if (nsrest == nsrStartup .and. finidat == ' ') then
        call mkarbinit()
        call UrbanInitTimeVar( )
-
-       arbinit = .true.
-       call initSLake(arbinit)
-!!!!! Attn EK: The calls to initch4 and initSLake combine both setting of state vars, and constant + flux & diagnostic
-    !          vars.  This is set up so that the submodels would be back-compatible with old restart files.
-    !          It is intended to work and allow bfb restarts as is, but may not be consistent style.
-    !          See these two routines for structure.  Feel free to modify this but be careful.
-    !          You may want to keep at least the initch4 as is to allow CH4 to be run even if it wasn't spun up
-    !          with CH4, as the CH4 sub-model comes to eq. within a month plus one year for annual mean variables.
-    !          Of course if clm_varctl:anoxia is used or NITRIF_DENITRIF is defined, then CN would no longer be in eq.
-
     end if
     call t_stopf('init_io2')
 
@@ -477,6 +479,12 @@ contains
     ! Initialize nitrogen deposition
     ! ------------------------------------------------------------------------
 
+    if (use_cn) then
+       call t_startf('init_ndep')
+       call ndep_init()
+       call ndep_interp()
+       call t_stopf('init_ndep')
+    end if
     
     ! ------------------------------------------------------------------------
     ! Initialization of model parameterizations that are needed after
@@ -486,6 +494,8 @@ contains
     ! ------------------------------------------------------------------------
     ! Initialize history and accumator buffers
     ! ------------------------------------------------------------------------
+
+    call t_startf('init_hist1')
 
     ! Initialize active history fields. This is only done if not a restart run. 
     ! If a restart run, then this information has already been obtained from the 
@@ -515,7 +525,7 @@ contains
     nclumps = get_proc_clumps()
 !$OMP PARALLEL DO PRIVATE (nc)
     do nc = 1, nclumps
-       call reweightWrapup(nc)
+       call setFilters(nc)
     end do
 !$OMP END PARALLEL DO
 

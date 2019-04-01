@@ -18,24 +18,16 @@ module controlMod
 
 ! !USES:
   use shr_kind_mod , only : r8 => shr_kind_r8, SHR_KIND_CL
-  use clm_varpar   , only : maxpatch_pft, maxpatch_glcmec, more_vertlayers
+  use clm_varpar   , only : maxpatch_pft, maxpatch_glcmec
   use clm_varctl   , only : caseid, ctitle, nsrest, brnch_retain_casename, hostname, &
                             model_version=>version,    &
-                            iulog, outnc_large_files, finidat, fsurdat, fatmlndfrc,  &
+                            iulog, outnc_large_files, finidat, fsurdat, fatmlndfrc, &
                             fatmtopo, flndtopo, fpftdyn, fpftcon, nrevsn, &
                             create_crop_landunit, allocate_all_vegpfts,   &
-                            co2_type, wrtdia, co2_ppmv, nsegspc, pertlim,       &
+                            co2_type, wrtdia, co2_ppmv, nsegspc,          &
                             username, fsnowaging, fsnowoptics, fglcmask, &
                             create_glacier_mec_landunit, glc_dyntopo, glc_smb, &
-                            glc_topomax, glc_grid, subgridflag, &
-                            use_c13, use_c14, irrigate, &
-                            spinup_state, override_bgc_restart_mismatch_dump
-  use CanopyFluxesMod , only : perchroot, perchroot_alt
-! Lakes
-  use SLakeCon, only : deepmixing_depthcrit, deepmixing_mixfact, lake_melt_icealb
-  ! lake_use_old_fcrit_minz0, lakepuddling, lake_puddle_thick, and lake_no_ed are currently hardwired.
-!
-  use SurfaceAlbedoMod, only : albice
+                            glc_grid, use_c13, use_c14, use_cn, use_cndv, use_crop 
   use spmdMod      , only : masterproc
   use decompMod    , only : clump_pproc
   use histFileMod  , only : max_tapes, max_namlen, &
@@ -49,15 +41,8 @@ module controlMod
   use shr_const_mod, only : SHR_CONST_CDAY
   use abortutils   , only : endrun
   use UrbanMod     , only : urban_hac, urban_traffic
-
-
-
-
-
   use SurfaceAlbedoMod, only : albice
-  use shr_nl_mod      , only : shr_nl_find_group_name
-  use Hydrology1Mod   , only : Hydrology1_readnl
-  use SoilHydrologyMod, only : SoilHydrology_readnl
+  use CNAllocationMod , only : suplnitro
  
 !
 ! !PUBLIC TYPES:
@@ -78,6 +63,10 @@ module controlMod
 ! Namelist variables only used locally
   character(len=  7) :: runtyp(4)                        ! run type
   character(len=SHR_KIND_CL) :: NLFilename = 'lnd.stdin' ! Namelist filename
+
+
+
+
 !EOP
 !-----------------------------------------------------------------------
 
@@ -90,15 +79,12 @@ contains
 !
 ! !INTERFACE:
   subroutine control_setNL( NLfile )
-!
-! !USES:
-  use clm_varctl , only : NLFileName_in
-!
-!
+
     implicit none
 !
 ! !DESCRIPTION:
 ! Set the namelist filename to use
+!
 !
 ! !ARGUMENTS:
   character(len=*), intent(IN) :: NLFile ! Namelist filename
@@ -125,7 +111,6 @@ contains
     end if
     ! Set the filename
     NLFilename = NLFile
-    NLFilename_in = NLFilename   ! For use in external namelists and to avoid creating dependencies on controlMod
   end subroutine control_setNL
 
 !------------------------------------------------------------------------
@@ -140,7 +125,7 @@ contains
 ! Initialize CLM run control information
 !
 ! !USES:
-    use clm_time_manager , only : set_timemgr_init, is_perpetual, get_timemgr_defaults
+    use clm_time_manager , only : set_timemgr_init, get_timemgr_defaults
     use fileutils        , only : getavu, relavu
     use shr_string_mod   , only : shr_string_getParentDir
     use clm_varctl       , only : clmvarctl_init, set_clmvarctl, nsrBranch, nsrStartup, &
@@ -198,13 +183,13 @@ contains
 
     ! BGC info
 
+    namelist /clm_inparm/  &
+         suplnitro
+
+    namelist /clm_inparm / use_c13, use_c14
 
     namelist /clm_inparm / &
          co2_type
-
-    namelist /clm_inparm / perchroot, perchroot_alt
-    namelist /clm_inparm / deepmixing_depthcrit, deepmixing_mixfact,  lake_melt_icealb
-                                                                      ! lake_melt_icealb is of dimension numrad
 
     ! Glacier_mec info
     namelist /clm_inparm / &    
@@ -213,20 +198,14 @@ contains
     ! Other options
 
     namelist /clm_inparm/  &
-         clump_pproc, wrtdia, pertlim, &
+         clump_pproc, wrtdia, &
          create_crop_landunit, nsegspc, co2_ppmv, override_nsrest, &
-         albice, more_vertlayers, subgridflag, irrigate
+         albice
     ! Urban options
 
     namelist /clm_inparm/  &
          urban_hac, urban_traffic
-
-
-
-    namelist /clm_inparm / use_c13, use_c14
-
-
-
+         
     ! ----------------------------------------------------------------------
     ! Default values
     ! ----------------------------------------------------------------------
@@ -242,7 +221,11 @@ contains
 
     ! Set clumps per procoessor
 
+
+
+
     clump_pproc = 1
+
 
     override_nsrest = nsrest
 
@@ -258,13 +241,13 @@ contains
        unitn = getavu()
        write(iulog,*) 'Read in clm_inparm namelist from: ', trim(NLFilename)
        open( unitn, file=trim(NLFilename), status='old' )
-       call shr_nl_find_group_name(unitn, 'clm_inparm', status=ierr)
-       if (ierr == 0) then
+       ierr = 1
+       do while ( ierr /= 0 )
           read(unitn, clm_inparm, iostat=ierr)
-          if (ierr /= 0) then
-             call endrun(subname // ':: ERROR reading clm_inparm namelist')
-          end if
-       end if
+          if (ierr < 0) then
+             call endrun( subname//' encountered end-of-file on clm_inparm read' )
+          endif
+       end do
        call relavu( unitn )
 
        ! ----------------------------------------------------------------------
@@ -272,13 +255,6 @@ contains
        ! ----------------------------------------------------------------------
 
        call set_timemgr_init( dtime_in=dtime )
-
-       if (is_perpetual()) then
-          if (finidat == ' ') then
-             write(iulog,*)'must specify initial dataset for perpetual mode'
-             call endrun()
-          end if
-       end if
 
        if (urban_traffic) then
           write(iulog,*)'Urban traffic fluxes are not implemented currently'
@@ -305,6 +281,13 @@ contains
            call set_clmvarctl( nsrest_in=override_nsrest )
        end if
        
+       ! Consistency of elevation classes on namelist to what's sent by the coupler
+       if (glc_nec /= maxpatch_glcmec ) then
+          write(iulog,*)'glc_nec, maxpatch_glcmec=',glc_nec, maxpatch_glcmec
+          write(iulog,*)'Number of glacier elevation classes from clm namelist and' // &
+                        ' sent by the coupler MUST be equal'
+          call endrun( subname //' ERROR: glc_nec and maxpatch_glcmec must be equal')  
+       end if
        if (maxpatch_glcmec > 0) then
           create_glacier_mec_landunit = .true.
        else
@@ -314,14 +297,6 @@ contains
     endif   ! end of if-masterproc if-block
 
     call clmvarctl_init( masterproc, dtime )
-
-    ! ----------------------------------------------------------------------
-    ! Read in other namelists for other modules
-    ! ----------------------------------------------------------------------
-
-    call Hydrology1_readnl(    NLFilename )
-    call SoilHydrology_readnl( NLFilename )
-
 
     ! ----------------------------------------------------------------------
     ! Broadcast all control information if appropriate
@@ -356,7 +331,6 @@ contains
 !
     use spmdMod,    only : mpicom, MPI_CHARACTER, MPI_INTEGER, MPI_LOGICAL, MPI_REAL8
     use clm_varctl, only : single_column, scmlat, scmlon, rpntfil
-    use clm_varpar, only : numrad
 !
 ! !ARGUMENTS:
     implicit none
@@ -392,10 +366,6 @@ contains
     call mpi_bcast (fsnowoptics,  len(fsnowoptics),  MPI_CHARACTER, 0, mpicom, ier)
     call mpi_bcast (fsnowaging,   len(fsnowaging),   MPI_CHARACTER, 0, mpicom, ier)
 
-    ! Irrigation
-
-    call mpi_bcast(irrigate,             1, MPI_LOGICAL, 0, mpicom, ier)
-
     ! Landunit generation
 
     call mpi_bcast(create_crop_landunit, 1, MPI_LOGICAL, 0, mpicom, ier)
@@ -404,34 +374,26 @@ contains
     ! BGC
 
     call mpi_bcast (co2_type, len(co2_type), MPI_CHARACTER, 0, mpicom, ier)
+    if (use_cn) then
+       call mpi_bcast (suplnitro, len(suplnitro), MPI_CHARACTER, 0, mpicom, ier)
+    end if
 
     ! isotopes
+
     call mpi_bcast (use_c13,          1, MPI_LOGICAL,     0, mpicom, ier)
     call mpi_bcast (use_c14,          1, MPI_LOGICAL,     0, mpicom, ier)
-
-
-
-
-    call mpi_bcast (perchroot, 1, MPI_LOGICAL, 0, mpicom, ier)
-    call mpi_bcast (perchroot_alt, 1, MPI_LOGICAL, 0, mpicom, ier)
-! Lakes
-    call mpi_bcast (deepmixing_depthcrit,     1, MPI_REAL8, 0, mpicom, ier)
-    call mpi_bcast (deepmixing_mixfact,       1, MPI_REAL8, 0, mpicom, ier)
-    call mpi_bcast (lake_melt_icealb,    numrad, MPI_REAL8, 0, mpicom, ier)
 
     ! physics variables
 
     call mpi_bcast (urban_hac     , len(urban_hac), MPI_CHARACTER, 0, mpicom, ier)
     call mpi_bcast (urban_traffic , 1, MPI_LOGICAL, 0, mpicom, ier)
     call mpi_bcast (nsegspc     , 1, MPI_INTEGER, 0, mpicom, ier)
-    call mpi_bcast (subgridflag , 1, MPI_INTEGER, 0, mpicom, ier)
     call mpi_bcast (wrtdia      , 1, MPI_LOGICAL, 0, mpicom, ier)
     call mpi_bcast (single_column,1, MPI_LOGICAL, 0, mpicom, ier)
     call mpi_bcast (scmlat,       1, MPI_REAL8,   0, mpicom, ier)
     call mpi_bcast (scmlon,       1, MPI_REAL8,   0, mpicom, ier)
     call mpi_bcast (co2_ppmv    , 1, MPI_REAL8,   0, mpicom, ier)
     call mpi_bcast (albice      , 2, MPI_REAL8,   0, mpicom, ier)
-    call mpi_bcast (more_vertlayers,1, MPI_LOGICAL, 0, mpicom, ier)
 
     ! glacier_mec variables
 
@@ -473,9 +435,6 @@ contains
 
     call mpi_bcast (clump_pproc, 1, MPI_INTEGER, 0, mpicom, ier)
 
-    ! error growth perturbation limit
-    call mpi_bcast (pertlim, 1, MPI_REAL8, 0, mpicom, ier)
-
   end subroutine control_spmd
 
 !------------------------------------------------------------------------
@@ -493,6 +452,7 @@ contains
 !
     use clm_varctl,      only : source, rpntdir, rpntfil, nsrStartup, nsrBranch, &
                                 nsrContinue
+    use CNAllocationMod, only : suplnitro, suplnNon
 !
 ! !ARGUMENTS:
     implicit none
@@ -536,10 +496,14 @@ contains
     else
        write(iulog,*) '   atm topographic data = ',trim(fatmtopo)
     end if
-
-
-
-
+    if (use_cn) then
+       if (suplnitro /= suplnNon)then
+          write(iulog,*) '   Supplemental Nitrogen mode is set to run over PFTs: ', &
+               trim(suplnitro)
+       end if
+       write(iulog, *)    '   use_c13: ', use_c13
+       write(iulog, *)    '   use_c14: ', use_c14
+    end if
     if (fsnowoptics == ' ') then
        write(iulog,*) '   snow optical properties file NOT set'
     else
@@ -578,12 +542,10 @@ contains
        write(iulog,*)'Large file support for output files is ON'
     end if
     write(iulog,*) 'model physics parameters:'
-    write(iulog,*) '   flag for random perturbation test is not set'
     write(iulog,*) '   CO2 volume mixing ratio   (umol/mol)   = ', co2_ppmv
     write(iulog,*) '   land-ice albedos      (unitless 0-1)   = ', albice
     write(iulog,*) '   urban air conditioning/heating and wasteheat   = ', urban_hac
     write(iulog,*) '   urban traffic flux   = ', urban_traffic
-    write(iulog,*) '   more vertical layers = ', more_vertlayers
     if (nsrest == nsrContinue) then
        write(iulog,*) 'restart warning:'
        write(iulog,*) '   Namelist not checked for agreement with initial run.'
@@ -594,22 +556,9 @@ contains
        write(iulog,*) '   Namelist not checked for agreement with initial run.'
        write(iulog,*) '   Surface data set and reference date should not differ from initial run'
     end if
-    if ( pertlim /= 0.0_r8 ) &
-    write(iulog,*) '   perturbation limit   = ',pertlim
     write(iulog,*) '   maxpatch_pft         = ',maxpatch_pft
     write(iulog,*) '   allocate_all_vegpfts = ',allocate_all_vegpfts
     write(iulog,*) '   nsegspc              = ',nsegspc
-! New fields
-    write(iulog,*) ' perchroot (plant water stress based on unfrozen layers only) = ',perchroot
-    write(iulog,*) ' perchroot (plant water stress based on time-integrated active layer only) = ',perchroot
-! Lakes
-    write(iulog,*)
-    write(iulog,*) 'Lake Model Namelists:'
-    write(iulog,*) 'Increased mixing relative to Hostetler wind-driven eddy expression ',&
-                   'will be used for deep lakes exceeding depth ', deepmixing_depthcrit,&
-                      ' by a factor of ', deepmixing_mixfact, '.'
-    write(iulog,*) 'Albedo over melting lakes will approach values (visible, NIR):', lake_melt_icealb, &
-                   'as compared with 0.60, 0.40 for cold frozen lakes with no snow.'
 
   end subroutine control_print
 

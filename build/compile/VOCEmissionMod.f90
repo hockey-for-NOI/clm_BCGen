@@ -14,7 +14,7 @@ module VOCEmissionMod
   use shr_kind_mod, only : r8 => shr_kind_r8
   use clm_varctl,   only : iulog
   use abortutils,   only : endrun
-  use clm_varpar,   only : numpft, nlevcan
+  use clm_varpar,   only : numpft
   use pftvarcon ,   only : ndllf_evr_tmp_tree,  ndllf_evr_brl_tree,    &
                            ndllf_dcd_brl_tree,  nbrdlf_evr_trp_tree,   &
                            nbrdlf_evr_tmp_tree, nbrdlf_dcd_brl_shrub,  &
@@ -117,8 +117,6 @@ contains
     integer , pointer :: pgridcell(:)     ! gridcell index of corresponding pft
     integer , pointer :: pcolumn(:)       ! column index of corresponding pft
     integer , pointer :: ivt(:)           ! pft vegetation type for current
-    integer , pointer :: clandunit(:)     ! gridcell of corresponding column
-    integer , pointer :: ltype(:)         ! landunit type
     real(r8), pointer :: t_veg(:)         ! pft vegetation temperature (Kelvin)
     real(r8), pointer :: fsun(:)          ! sunlit fraction of canopy
     real(r8), pointer :: elai(:)          ! one-sided leaf area index with burying by snow
@@ -141,8 +139,8 @@ contains
     real(r8), pointer :: bsw(:,:)         ! Clapp and Hornberger "b" (nlevgrnd)
     real(r8), pointer :: watsat(:,:)      ! volumetric soil water at saturation (porosity) (nlevgrnd)
     real(r8), pointer :: sucsat(:,:)      ! minimum soil suction (mm) (nlevgrnd)
-    real(r8), pointer :: cisun_z(:,:)     ! sunlit intracellular CO2 (Pa)
-    real(r8), pointer :: cisha_z(:,:)     ! shaded intracellular CO2 (Pa)
+    real(r8), pointer :: cisun(:)         ! sunlit intracellular CO2 (Pa)
+    real(r8), pointer :: cisha(:)         ! shaded intracellular CO2 (Pa)
     real(r8), pointer :: forc_pbot(:)     ! atmospheric pressure (Pa)
 !
 ! local pointers to original implicit out arrays
@@ -203,7 +201,6 @@ contains
     real(r8), parameter :: megemis_units_factor = 1._r8/3600._r8/1.e6_r8
 
 !    real(r8) :: root_depth(0:numpft)    ! Root depth [m]
-    character(len=32), parameter :: subname = "VOCEmission"
 !
 !!-----------------------------------------------------------------------
 !
@@ -219,8 +216,6 @@ contains
 !-----------------------------------------------------------------------
     if ( shr_megan_mechcomps_n < 1) return
 
-    clandunit  =>col%landunit
-    ltype      => lun%itype
     ! Assign local pointers to derived type members (gridcell-level)
     forc_solad => clm_a2l%forc_solad
     forc_solai => clm_a2l%forc_solai
@@ -236,20 +231,17 @@ contains
 
     ! Assign local pointers to derived subtypes components (pft-level)
 
-    pgridcell        =>pft%gridcell
-    pcolumn          =>pft%column
-    ivt              =>pft%itype
+    pgridcell        => pft%gridcell
+    pcolumn          => pft%column
+    ivt              => pft%itype
     t_veg            => pes%t_veg
     fsun             => pps%fsun
     elai             => pps%elai
     clayfrac         => pps%clayfrac
     sandfrac         => pps%sandfrac
 
-    cisun_z          => pcf%cisun_z
-    cisha_z          => pcf%cisha_z
-    if ( nlevcan /= 1 )then
-       call endrun( subname//' error: can NOT work without nlevcan == 1' )
-    end if
+    cisun            => pps%cisun
+    cisha            => pps%cisha
 
     vocflx           => pvf%vocflx
     vocflx_tot       => pvf%vocflx_tot
@@ -383,7 +375,7 @@ contains
 
              ! Activity factor for CO2 (only for isoprene)
              if (trim(meg_cmp%name) == 'isoprene') then 
-                gamma_c = get_gamma_C(cisun_z(p,1),cisha_z(p,1),forc_pbot(g),fsun(p))
+                gamma_c = get_gamma_C(cisun(p),cisha(p),forc_pbot(g),fsun(p))
              else
                 gamma_c = 1._r8
              end if

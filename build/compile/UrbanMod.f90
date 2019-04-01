@@ -142,15 +142,13 @@ contains
     real(r8), pointer :: albd(:,:)    ! surface albedo (direct)
     real(r8), pointer :: albi(:,:)    ! surface albedo (diffuse)
     real(r8), pointer :: fabd(:,:)    ! flux absorbed by veg per unit direct  flux
-    real(r8), pointer :: fabd_sun(:,:)! flux absorbed by sunlit leaf per unit direct flux
-    real(r8), pointer :: fabd_sha(:,:)! flux absorbed by shaded leaf per unit direct flux
     real(r8), pointer :: fabi(:,:)    ! flux absorbed by veg per unit diffuse flux
-    real(r8), pointer :: fabi_sun(:,:)! flux absorbed by sunlit leaf per unit diffuse flux
-    real(r8), pointer :: fabi_sha(:,:)! flux absorbed by shaded leaf per unit diffuse flux
     real(r8), pointer :: ftdd(:,:)    ! down direct  flux below veg per unit dir flx
     real(r8), pointer :: ftid(:,:)    ! down diffuse flux below veg per unit dir flx
     real(r8), pointer :: ftii(:,:)    ! down diffuse flux below veg per unit dif flx
     real(r8), pointer :: fsun(:)      ! sunlit fraction of canopy
+    real(r8), pointer :: gdir(:)      ! leaf projection in solar direction (0 to 1)
+    real(r8), pointer :: omega(:,:)   ! fraction of intercepted radiation that is scattered (0 to 1)
     real(r8), pointer :: vf_sr(:)     ! view factor of sky for road
     real(r8), pointer :: vf_wr(:)     ! view factor of one wall for road
     real(r8), pointer :: vf_sw(:)     ! view factor of sky for one wall
@@ -236,14 +234,14 @@ contains
 
     ! Assign gridcell level pointers
 
-    lat                =>  grc%lat
-    lon                =>  grc%lon
+    lat                => grc%lat
+    lon                => grc%lon
 
     ! Assign landunit level pointer
 
-    lgridcell          =>lun%gridcell
-    coli               =>lun%coli
-    colf               =>lun%colf
+    lgridcell          => lun%gridcell
+    coli               => lun%coli
+    colf               => lun%colf
     vf_sr              => lps%vf_sr
     vf_wr              => lps%vf_wr
     vf_sw              => lps%vf_sw
@@ -266,27 +264,24 @@ contains
     albgrd             => cps%albgrd
     albgri             => cps%albgri
     frac_sno           => cps%frac_sno
-    clandunit          =>col%landunit
-    cgridcell          =>col%gridcell
+    clandunit          => col%landunit
+    cgridcell          => col%gridcell
     czen               => cps%coszen
 
     ! Assign pft  level pointers
 
-    pgridcell          =>pft%gridcell
-    pcolumn            =>pft%column
+    pgridcell          => pft%gridcell
+    pcolumn            => pft%column
     albd               => pps%albd
     albi               => pps%albi
     fabd               => pps%fabd
-    fabd_sun           => pps%fabd_sun
-    fabd_sha           => pps%fabd_sha
     fabi               => pps%fabi
-    fabi_sun           => pps%fabi_sun
-    fabi_sha           => pps%fabi_sha
     ftdd               => pps%ftdd
     ftid               => pps%ftid
     ftii               => pps%ftii
     fsun               => pps%fsun
-
+    gdir               => pps%gdir
+    omega              => pps%omega
 
     ! ----------------------------------------------------------------------------
     ! Solar declination and cosine solar zenith angle and zenith angle for 
@@ -325,11 +320,7 @@ contains
           albd(p,ib)    = 1._r8
           albi(p,ib)    = 1._r8
           fabd(p,ib)    = 0._r8
-          fabd_sun(p,ib) = 0._r8
-          fabd_sha(p,ib) = 0._r8
           fabi(p,ib)    = 0._r8
-          fabi_sun(p,ib) = 0._r8
-          fabi_sha(p,ib) = 0._r8
           if (coszen_pft(fp) > 0._r8) then
              ftdd(p,ib) = 1._r8
           else
@@ -341,7 +332,9 @@ contains
           else
              ftii(p,ib) = 0._r8
           end if
+          omega(p,ib)   = 0._r8
           if (ib == 1) then
+             gdir(p)    = 0._r8
              fsun(p)    = 0._r8
           end if
        end do
@@ -561,8 +554,8 @@ contains
 
     ! Assign local pointers to derived type members (landunit level)
 
-    coli       =>lun%coli
-    colf       =>lun%colf
+    coli       => lun%coli
+    colf       => lun%colf
 
     ! Assign local pointers to derived subtypes components (column-level)
 
@@ -700,6 +693,8 @@ contains
 !
 ! local pointers to original implicit out arguments (clmtype)
 !
+    real(r8), pointer :: parsun(:)               ! average absorbed PAR for sunlit leaves (W/m**2)
+    real(r8), pointer :: parsha(:)               ! average absorbed PAR for shaded leaves (W/m**2)
     real(r8), pointer :: sabg(:)                 ! solar radiation absorbed by ground (W/m**2)
     real(r8), pointer :: sabv(:)                 ! solar radiation absorbed by vegetation (W/m**2)
     real(r8), pointer :: fsa(:)                  ! solar radiation absorbed (total) (W/m**2)
@@ -714,8 +709,6 @@ contains
     real(r8), pointer :: fsr_vis_i(:)            ! reflected diffuse vis solar radiation (W/m**2)
     real(r8), pointer :: fsr_nir_i(:)            ! reflected diffuse nir solar radiation (W/m**2)
     real(r8), pointer :: fsds_vis_d_ln(:)        ! incident direct beam vis solar rad at local noon (W/m**2)
-    real(r8), pointer :: fsds_vis_i_ln(:)        ! incident diffuse beam vis solar rad at local noon (W/m**2)
-    real(r8), pointer :: parveg_ln(:)            ! absorbed par by vegetation at local noon (W/m**2)
     real(r8), pointer :: fsds_nir_d_ln(:)        ! incident direct beam nir solar rad at local noon (W/m**2)
     real(r8), pointer :: fsr_vis_d_ln(:)         ! reflected direct beam vis solar rad at local noon (W/m**2)
     real(r8), pointer :: fsr_nir_d_ln(:)         ! reflected direct beam nir solar rad at local noon (W/m**2)
@@ -772,7 +765,7 @@ contains
 
     ! Assign local pointers to multi-level derived type members (gridcell level)
     
-    londeg        =>  grc%londeg
+    londeg        => grc%londeg
     forc_solad    => clm_a2l%forc_solad
     forc_solai    => clm_a2l%forc_solai
     forc_solar    => clm_a2l%forc_solar
@@ -780,11 +773,11 @@ contains
 
     ! Assign local pointers to derived type members (landunit level)
 
-    pfti           =>lun%pfti
-    pftf           =>lun%pftf
-    coli           =>lun%coli
-    colf           =>lun%colf
-    lgridcell      =>lun%gridcell
+    pfti           => lun%pfti
+    pftf           => lun%pftf
+    coli           => lun%coli
+    colf           => lun%colf
+    lgridcell      => lun%gridcell
     vf_sr          => lps%vf_sr
     vf_wr          => lps%vf_wr
     vf_sw          => lps%vf_sw
@@ -809,8 +802,8 @@ contains
 
     ! Assign local pointers to derived type members (pft level)
 
-    pgridcell      =>pft%gridcell
-    pcolumn        =>pft%column
+    pgridcell      => pft%gridcell
+    pcolumn        => pft%column
     albd           => pps%albd
     albi           => pps%albi
     sabg           => pef%sabg
@@ -828,13 +821,13 @@ contains
     fsr_nir_i      => pef%fsr_nir_i
     fsds_vis_d_ln  => pef%fsds_vis_d_ln
     fsds_nir_d_ln  => pef%fsds_nir_d_ln
-    fsds_vis_i_ln  => pef%fsds_vis_i_ln
-    parveg_ln      => pef%parveg_ln
     fsr_vis_d_ln   => pef%fsr_vis_d_ln
     fsr_nir_d_ln   => pef%fsr_nir_d_ln
     eflx_lwrad_out => pef%eflx_lwrad_out 
     eflx_lwrad_net => pef%eflx_lwrad_net
     eflx_lwrad_net_u => pef%eflx_lwrad_net_u
+    parsun         => pef%parsun
+    parsha         => pef%parsha
     t_ref2m        => pes%t_ref2m
 
     ! Define fields that appear on the restart file for non-urban landunits 
@@ -917,7 +910,7 @@ contains
        p = filter_urbanp(fp)
        g = pgridcell(p)
        
-       local_secp1 = secs + nint((grc%londeg(g)/degpsec)/dtime)*dtime
+       local_secp1 = secs + nint((londeg(g)/degpsec)/dtime)*dtime
        local_secp1 = mod(local_secp1,isecspday)
 
        ! Solar incident 
@@ -930,13 +923,9 @@ contains
        if (local_secp1 == noonsec) then
           fsds_vis_d_ln(p) = forc_solad(g,1)
           fsds_nir_d_ln(p) = forc_solad(g,2)
-          fsds_vis_i_ln(p) = forc_solai(g,1)
-          parveg_ln(p)     = 0._r8
        else
           fsds_vis_d_ln(p) = spval 
           fsds_nir_d_ln(p) = spval 
-          fsds_vis_i_ln(p) = spval
-          parveg_ln(p)     = spval
        endif
        
        ! Solar reflected 
@@ -1015,6 +1004,8 @@ contains
           sabv(p)   = 0._r8
           fsa(p)    = sabv(p) + sabg(p)
           fsa_u(p)  = fsa(p)
+          parsun(p) = 0._r8  
+          parsha(p) = 0._r8  
           
        end do   ! end loop over urban pfts
        
@@ -2352,12 +2343,12 @@ contains
   subroutine UrbanClumpInit()
 !
 ! !DESCRIPTION: 
-! Initialize urban surface dataset variables
+! Initialize urban radiation module
 !
 ! !USES:
     use clmtype
     use clm_varcon   , only : spval, icol_roof, icol_sunwall, icol_shadewall, &
-                              icol_road_perv, icol_road_imperv, udens_base
+                              icol_road_perv, icol_road_imperv
     use decompMod    , only : get_proc_clumps, ldecomp
     use filterMod    , only : filter
     use UrbanInputMod, only : urbinp
@@ -2379,7 +2370,6 @@ contains
     integer , pointer :: colf(:)         ! ending column index for landunit
     integer , pointer :: lgridcell(:)    ! gridcell of corresponding landunit
     integer , pointer :: ctype(:)        ! column type
-    integer , pointer :: udenstype(:)    ! urban density type
 !
 !
 ! !OTHER LOCAL VARIABLES
@@ -2389,15 +2379,13 @@ contains
     integer :: nclumps                   ! number of clumps on processor 
     integer :: num_urbanl                ! number of per-clump urban landunits
     integer :: ier                       ! error status
-    integer :: dindx                     ! urban density type index
 !-----------------------------------------------------------------------
 
     ! Assign local pointers to derived type members (landunit-level)
 
-    coli         =>lun%coli
-    colf         =>lun%colf
-    lgridcell    =>lun%gridcell
-    udenstype    =>lun%udenstype
+    coli         => lun%coli
+    colf         => lun%colf
+    lgridcell    => lun%gridcell
 
     ! Assign local pointers to derived type members (column-level)
 
@@ -2415,7 +2403,7 @@ contains
 
     do nc = 1, nclumps
 
-       ! Determine number of urban landunits in clump
+       ! Determine number of unrban landunits in clump
 
        num_urbanl = filter(nc)%num_urbanl
 
@@ -2455,7 +2443,7 @@ contains
                     urban_clump(nc)%alb_wall_dir      (num_urbanl,numrad), &        
                     urban_clump(nc)%alb_wall_dif      (num_urbanl,numrad), stat=ier )
           if (ier /= 0) then
-             write(iulog,*)'UrbanClumpInit: allocation error for urban derived type'; call endrun()
+             write(iulog,*)'UrbanRadInit: allocation error for urban derived type'; call endrun()
           endif
        end if
 
@@ -2463,27 +2451,46 @@ contains
 
        do fl = 1,num_urbanl
           l = filter(nc)%urbanl(fl)
-          g =lun%gridcell(l)
-          dindx = udenstype(l) - udens_base
-          urban_clump(nc)%canyon_hwr     (fl) = urbinp%canyon_hwr     (g,dindx)
-          urban_clump(nc)%wtroad_perv    (fl) = urbinp%wtroad_perv    (g,dindx)
-          urban_clump(nc)%ht_roof        (fl) = urbinp%ht_roof        (g,dindx)
-          urban_clump(nc)%wtlunit_roof   (fl) = urbinp%wtlunit_roof   (g,dindx)
-          urban_clump(nc)%wind_hgt_canyon(fl) = urbinp%wind_hgt_canyon(g,dindx)
+          g = lun%gridcell(l)
+          urban_clump(nc)%canyon_hwr     (fl) = urbinp%canyon_hwr     (g)
+          urban_clump(nc)%wtroad_perv    (fl) = urbinp%wtroad_perv    (g)
+          urban_clump(nc)%ht_roof        (fl) = urbinp%ht_roof        (g)
+          urban_clump(nc)%wtlunit_roof   (fl) = urbinp%wtlunit_roof   (g)
+          urban_clump(nc)%wind_hgt_canyon(fl) = urbinp%wind_hgt_canyon(g)
           do ib = 1,numrad
-             urban_clump(nc)%alb_roof_dir   (fl,ib) = urbinp%alb_roof_dir   (g,dindx,ib)
-             urban_clump(nc)%alb_roof_dif   (fl,ib) = urbinp%alb_roof_dif   (g,dindx,ib)
-             urban_clump(nc)%alb_improad_dir(fl,ib) = urbinp%alb_improad_dir(g,dindx,ib)
-             urban_clump(nc)%alb_perroad_dir(fl,ib) = urbinp%alb_perroad_dir(g,dindx,ib)
-             urban_clump(nc)%alb_improad_dif(fl,ib) = urbinp%alb_improad_dif(g,dindx,ib)
-             urban_clump(nc)%alb_perroad_dif(fl,ib) = urbinp%alb_perroad_dif(g,dindx,ib)
-             urban_clump(nc)%alb_wall_dir   (fl,ib) = urbinp%alb_wall_dir   (g,dindx,ib)
-             urban_clump(nc)%alb_wall_dif   (fl,ib) = urbinp%alb_wall_dif   (g,dindx,ib)
+             urban_clump(nc)%alb_roof_dir   (fl,ib) = urbinp%alb_roof_dir   (g,ib)
+             urban_clump(nc)%alb_roof_dif   (fl,ib) = urbinp%alb_roof_dif   (g,ib)
+             urban_clump(nc)%alb_improad_dir(fl,ib) = urbinp%alb_improad_dir(g,ib)
+             urban_clump(nc)%alb_perroad_dir(fl,ib) = urbinp%alb_perroad_dir(g,ib)
+             urban_clump(nc)%alb_improad_dif(fl,ib) = urbinp%alb_improad_dif(g,ib)
+             urban_clump(nc)%alb_perroad_dif(fl,ib) = urbinp%alb_perroad_dif(g,ib)
+             urban_clump(nc)%alb_wall_dir   (fl,ib) = urbinp%alb_wall_dir   (g,ib)
+             urban_clump(nc)%alb_wall_dif   (fl,ib) = urbinp%alb_wall_dif   (g,ib)
           end do
-          urban_clump(nc)%em_roof   (fl) = urbinp%em_roof   (g,dindx)
-          urban_clump(nc)%em_improad(fl) = urbinp%em_improad(g,dindx)
-          urban_clump(nc)%em_perroad(fl) = urbinp%em_perroad(g,dindx)
-          urban_clump(nc)%em_wall   (fl) = urbinp%em_wall   (g,dindx)
+          urban_clump(nc)%em_roof   (fl) = urbinp%em_roof   (g)
+          urban_clump(nc)%em_improad(fl) = urbinp%em_improad(g)
+          urban_clump(nc)%em_perroad(fl) = urbinp%em_perroad(g)
+          urban_clump(nc)%em_wall   (fl) = urbinp%em_wall   (g)
+!         write(iulog,*)'g: ',g
+!         write(iulog,*)'l: ',l
+!         write(iulog,*)'fl: ',fl
+!         write(iulog,*)'urban_clump(nc)%canyon_hwr: ',urban_clump(nc)%canyon_hwr(fl)
+!         write(iulog,*)'urban_clump(nc)%wtroad_perv: ',urban_clump(nc)%wtroad_perv(fl)
+!         write(iulog,*)'urban_clump(nc)%ht_roof: ',urban_clump(nc)%ht_roof(fl)
+!         write(iulog,*)'urban_clump(nc)%wtlunit_roof: ',urban_clump(nc)%wtlunit_roof(fl)
+!         write(iulog,*)'urban_clump(nc)%wind_hgt_canyon: ',urban_clump(nc)%wind_hgt_canyon(fl)
+!         write(iulog,*)'urban_clump(nc)%alb_roof_dir: ',urban_clump(nc)%alb_roof_dir(fl,:)
+!         write(iulog,*)'urban_clump(nc)%alb_roof_dif: ',urban_clump(nc)%alb_roof_dif(fl,:)
+!         write(iulog,*)'urban_clump(nc)%alb_improad_dir: ',urban_clump(nc)%alb_improad_dir(fl,:)
+!         write(iulog,*)'urban_clump(nc)%alb_improad_dif: ',urban_clump(nc)%alb_improad_dif(fl,:)
+!         write(iulog,*)'urban_clump(nc)%alb_perroad_dir: ',urban_clump(nc)%alb_perroad_dir(fl,:)
+!         write(iulog,*)'urban_clump(nc)%alb_perroad_dif: ',urban_clump(nc)%alb_perroad_dif(fl,:)
+!         write(iulog,*)'urban_clump(nc)%alb_wall_dir: ',urban_clump(nc)%alb_wall_dir(fl,:)
+!         write(iulog,*)'urban_clump(nc)%alb_wall_dif: ',urban_clump(nc)%alb_wall_dif(fl,:)
+!         write(iulog,*)'urban_clump(nc)%em_roof: ',urban_clump(nc)%em_roof(fl)
+!         write(iulog,*)'urban_clump(nc)%em_improad: ',urban_clump(nc)%em_improad(fl)
+!         write(iulog,*)'urban_clump(nc)%em_perroad: ',urban_clump(nc)%em_perroad(fl)
+!         write(iulog,*)'urban_clump(nc)%em_wall: ',urban_clump(nc)%em_wall(fl)
        end do
     end do   ! end of loop over clumps
 
@@ -2515,7 +2522,7 @@ contains
     use filterMod          , only : filter
     use FrictionVelocityMod, only : FrictionVelocity, MoninObukIni
     use QSatMod            , only : QSat
-    use clm_varpar         , only : maxpatch_urb, nlevurb, nlevgrnd
+    use clm_varpar         , only : maxpatch_urb, nlevurb
     use clm_time_manager   , only : get_curr_date, get_step_size, get_nstep
     use clm_atmlnd         , only : clm_a2l
 
@@ -2594,7 +2601,7 @@ contains
     real(r8), pointer :: h2osoi_ice(:,:)      ! ice lens (kg/m2)
     real(r8), pointer :: h2osoi_liq(:,:)      ! liquid water (kg/m2)
     real(r8), pointer :: frac_sno(:)          ! fraction of ground covered by snow (0 to 1)
-    real(r8), pointer :: snow_depth(:)            ! snow height (m)
+    real(r8), pointer :: snowdp(:)            ! snow height (m)
     real(r8), pointer :: h2osno(:)            ! snow water (mm H2O)
     integer , pointer :: snl(:)               ! number of snow layers
     real(r8), pointer :: rootr_road_perv(:,:) ! effective fraction of roots in each soil layer for urban pervious road
@@ -2627,9 +2634,6 @@ contains
     real(r8), pointer :: t_building(:)    ! internal building temperature (K)
     real(r8), pointer :: rh_ref2m(:)      ! 2 m height surface relative humidity (%)
     real(r8), pointer :: rh_ref2m_u(:)    ! Urban 2 m height surface relative humidity (%)
-    real(r8), pointer :: eflx_sh_snow(:)          ! sensible heat flux from snow (W/m**2) [+ to atm]
-    real(r8), pointer :: eflx_sh_soil(:)          ! sensible heat flux from soil (W/m**2) [+ to atm]
-    real(r8), pointer :: eflx_sh_h2osfc(:)        ! sensible heat flux from soil (W/m**2) [+ to atm]
 !
 !
 ! !OTHER LOCAL VARIABLES
@@ -2749,20 +2753,20 @@ contains
     forc_rho   => clm_a2l%forc_rho
     forc_q     => clm_a2l%forc_q
     forc_pbot  => clm_a2l%forc_pbot
-    londeg     =>  grc%londeg
+    londeg     => grc%londeg
 
     ! Assign local pointers to derived type members (landunit level)
 
-    pfti                =>lun%pfti
-    pftf                =>lun%pftf
-    coli                =>lun%coli
-    colf                =>lun%colf
-    lgridcell           =>lun%gridcell
-    z_0_town            =>lun%z_0_town
-    z_d_town            =>lun%z_d_town
+    pfti                => lun%pfti
+    pftf                => lun%pftf
+    coli                => lun%coli
+    colf                => lun%colf
+    lgridcell           => lun%gridcell
+    z_0_town            => lun%z_0_town
+    z_d_town            => lun%z_d_town
     taf                 => lps%taf
     qaf                 => lps%qaf
-    npfts               =>lun%npfts
+    npfts               => lun%npfts
     eflx_traffic        => lef%eflx_traffic
     eflx_traffic_factor => lef%eflx_traffic_factor
     eflx_wasteheat      => lef%eflx_wasteheat
@@ -2782,7 +2786,7 @@ contains
     h2osoi_ice         => cws%h2osoi_ice
     h2osoi_liq         => cws%h2osoi_liq
     frac_sno           => cps%frac_sno
-    snow_depth             => cps%snow_depth
+    snowdp             => cps%snowdp
     h2osno             => cws%h2osno
     snl                => cps%snl
     rootr_road_perv    => cps%rootr_road_perv
@@ -2790,9 +2794,9 @@ contains
 
     ! Assign local pointers to derived type members (pft level)
 
-    pgridcell      =>pft%gridcell
-    pcolumn        =>pft%column
-    plandunit      =>pft%landunit
+    pgridcell      => pft%gridcell
+    pcolumn        => pft%column
+    plandunit      => pft%landunit
     ram1           => pps%ram1
     dlrad          => pef%dlrad
     ulrad          => pef%ulrad
@@ -2822,9 +2826,6 @@ contains
     rh_ref2m => pes%rh_ref2m
     rh_ref2m_u     => pes%rh_ref2m_u
 
-    eflx_sh_snow   => pef%eflx_sh_snow
-    eflx_sh_soil   => pef%eflx_sh_soil
-    eflx_sh_h2osfc => pef%eflx_sh_h2osfc
     ! Define fields that appear on the restart file for non-urban landunits 
 
     do fl = 1,num_nourbanl
@@ -2850,7 +2851,7 @@ contains
        l = filter_urbanl(fl)
        g = lgridcell(l)
 
-       local_secp1(l)        = secs + nint((grc%londeg(g)/degpsec)/dtime)*dtime
+       local_secp1(l)        = secs + nint((londeg(g)/degpsec)/dtime)*dtime
        local_secp1(l)        = mod(local_secp1(l),isecspday)
 
        ! Error checks
@@ -3010,8 +3011,8 @@ contains
                  ! unscaled sensible heat conductance
                  wtus_roof(l) = 1._r8/canyon_resistance(fl)
 
-                 if (snow_depth(c) > 0._r8) then
-                   fwet_roof = min(snow_depth(c)/0.05_r8, 1._r8)
+                 if (snowdp(c) > 0._r8) then
+                   fwet_roof = min(snowdp(c)/0.05_r8, 1._r8)
                  else
                    fwet_roof = (max(0._r8, h2osoi_liq(c,1)+h2osoi_ice(c,1))/pondmx_urban)**0.666666666666_r8
                    fwet_roof = min(fwet_roof,1._r8)
@@ -3070,8 +3071,8 @@ contains
                    wtus_road_imperv(l) = 0._r8
                  end if
 
-                 if (snow_depth(c) > 0._r8) then
-                   fwet_road_imperv = min(snow_depth(c)/0.05_r8, 1._r8)
+                 if (snowdp(c) > 0._r8) then
+                   fwet_road_imperv = min(snowdp(c)/0.05_r8, 1._r8)
                  else
                    fwet_road_imperv = (max(0._r8, h2osoi_liq(c,1)+h2osoi_ice(c,1))/pondmx_urban)**0.666666666666_r8
                    fwet_road_imperv = min(fwet_road_imperv,1._r8)
@@ -3284,29 +3285,14 @@ contains
 
        if (ctype(c) == icol_roof) then
          eflx_sh_grnd(p)  = -forc_rho(g)*cpair*wtus_roof(l)*dth(l)
-         eflx_sh_snow(p)  = 0._r8
-         eflx_sh_soil(p)  = 0._r8
-         eflx_sh_h2osfc(p)= 0._r8
        else if (ctype(c) == icol_road_perv) then
          eflx_sh_grnd(p)  = -forc_rho(g)*cpair*wtus_road_perv(l)*dth(l)
-         eflx_sh_snow(p)  = 0._r8
-         eflx_sh_soil(p)  = 0._r8
-         eflx_sh_h2osfc(p)= 0._r8
        else if (ctype(c) == icol_road_imperv) then
          eflx_sh_grnd(p)  = -forc_rho(g)*cpair*wtus_road_imperv(l)*dth(l)
-         eflx_sh_snow(p)  = 0._r8
-         eflx_sh_soil(p)  = 0._r8
-         eflx_sh_h2osfc(p)= 0._r8
        else if (ctype(c) == icol_sunwall) then
          eflx_sh_grnd(p)  = -forc_rho(g)*cpair*wtus_sunwall(l)*dth(l)
-         eflx_sh_snow(p)  = 0._r8
-         eflx_sh_soil(p)  = 0._r8
-         eflx_sh_h2osfc(p)= 0._r8
        else if (ctype(c) == icol_shadewall) then
          eflx_sh_grnd(p)  = -forc_rho(g)*cpair*wtus_shadewall(l)*dth(l)
-         eflx_sh_snow(p)  = 0._r8
-         eflx_sh_soil(p)  = 0._r8
-         eflx_sh_h2osfc(p)= 0._r8
        end if
 
        eflx_sh_tot(p)   = eflx_sh_grnd(p)
@@ -3428,7 +3414,7 @@ contains
 
     ! No roots for urban except for pervious road
 
-    do j = 1, nlevgrnd
+    do j = 1, nlevurb
       do f = 1, num_urbanp
          p = filter_urbanp(f)
          c = pcolumn(p)
@@ -3468,6 +3454,10 @@ contains
 
        psnsun(p)                   = 0._r8
        psnsha(p)                   = 0._r8
+       pps%lncsun(p)  = 0._r8
+       pps%lncsha(p)  = 0._r8
+       pps%vcmxsun(p) = 0._r8
+       pps%vcmxsha(p) = 0._r8
 
     end do
 

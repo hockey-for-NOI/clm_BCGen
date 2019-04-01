@@ -25,34 +25,34 @@ module UrbanInputMod
   public :: UrbanInput         ! Read in urban input data
 
   type urbinp_t
-     real(r8), pointer :: canyon_hwr(:,:)  
-     real(r8), pointer :: wtlunit_roof(:,:)  
-     real(r8), pointer :: wtroad_perv(:,:)  
-     real(r8), pointer :: em_roof(:,:)   
-     real(r8), pointer :: em_improad(:,:)  
-     real(r8), pointer :: em_perroad(:,:)  
-     real(r8), pointer :: em_wall(:,:)  
-     real(r8), pointer :: alb_roof_dir(:,:,:)  
-     real(r8), pointer :: alb_roof_dif(:,:,:)  
-     real(r8), pointer :: alb_improad_dir(:,:,:)  
-     real(r8), pointer :: alb_improad_dif(:,:,:)  
-     real(r8), pointer :: alb_perroad_dir(:,:,:)  
-     real(r8), pointer :: alb_perroad_dif(:,:,:)  
-     real(r8), pointer :: alb_wall_dir(:,:,:)  
-     real(r8), pointer :: alb_wall_dif(:,:,:)  
-     real(r8), pointer :: ht_roof(:,:)
-     real(r8), pointer :: wind_hgt_canyon(:,:)
-     real(r8), pointer :: tk_wall(:,:,:)
-     real(r8), pointer :: tk_roof(:,:,:)
-     real(r8), pointer :: tk_improad(:,:,:)
-     real(r8), pointer :: cv_wall(:,:,:)
-     real(r8), pointer :: cv_roof(:,:,:)
-     real(r8), pointer :: cv_improad(:,:,:)
-     real(r8), pointer :: thick_wall(:,:)
-     real(r8), pointer :: thick_roof(:,:)
-     integer,  pointer :: nlev_improad(:,:)
-     real(r8), pointer :: t_building_min(:,:)
-     real(r8), pointer :: t_building_max(:,:)
+     real(r8), pointer :: canyon_hwr(:)  
+     real(r8), pointer :: wtlunit_roof(:)  
+     real(r8), pointer :: wtroad_perv(:)  
+     real(r8), pointer :: em_roof(:)   
+     real(r8), pointer :: em_improad(:)  
+     real(r8), pointer :: em_perroad(:)  
+     real(r8), pointer :: em_wall(:)  
+     real(r8), pointer :: alb_roof_dir(:,:)  
+     real(r8), pointer :: alb_roof_dif(:,:)  
+     real(r8), pointer :: alb_improad_dir(:,:)  
+     real(r8), pointer :: alb_improad_dif(:,:)  
+     real(r8), pointer :: alb_perroad_dir(:,:)  
+     real(r8), pointer :: alb_perroad_dif(:,:)  
+     real(r8), pointer :: alb_wall_dir(:,:)  
+     real(r8), pointer :: alb_wall_dif(:,:)  
+     real(r8), pointer :: ht_roof(:)
+     real(r8), pointer :: wind_hgt_canyon(:)
+     real(r8), pointer :: tk_wall(:,:)
+     real(r8), pointer :: tk_roof(:,:)
+     real(r8), pointer :: tk_improad(:,:)
+     real(r8), pointer :: cv_wall(:,:)
+     real(r8), pointer :: cv_roof(:,:)
+     real(r8), pointer :: cv_improad(:,:)
+     real(r8), pointer :: thick_wall(:)
+     real(r8), pointer :: thick_roof(:)
+     integer,  pointer :: nlev_improad(:)
+     real(r8), pointer :: t_building_min(:)
+     real(r8), pointer :: t_building_max(:)
   end type urbinp_t
   public urbinp_t
 
@@ -75,11 +75,11 @@ contains
 ! Allocate memory and read in urban input data
 !
 ! !USES:
-    use clm_varpar, only : numrad, nlevurb, numurbl
+    use clm_varpar, only : numrad, nlevurb, numsolar
     use clm_varctl, only : iulog, fsurdat, single_column
     use fileutils , only : getavu, relavu, getfil, opnfil
     use spmdMod   , only : masterproc
-    use clmtype   , only : grlnd
+    use clmtype 
     use decompMod , only : get_proc_bounds
     use domainMod , only : ldomain
     use ncdio_pio 
@@ -100,24 +100,56 @@ contains
 !EOP
     character(len=256) :: locfn      ! local file name
     type(file_desc_t)  :: ncid       ! netcdf id
-    integer :: dimid                 ! netCDF id
+    integer :: dimid,varid           ! netCDF id's
     integer :: begg,endg             ! start/stop gridcells
     integer :: nw,n,k,i,j,ni,nj,ns   ! indices
     integer :: nlevurb_i             ! input grid: number of urban vertical levels
+    integer :: numsolar_i            ! input grid: number of solar type (DIR/DIF)
     integer :: numrad_i              ! input grid: number of solar bands (VIS/NIR)
-    integer :: numurbl_i             ! input grid: number of urban landunits
     integer :: ier,ret               ! error status
     logical :: isgrid2d              ! true => file is 2d 
     logical :: readvar               ! true => variable is on dataset
-    logical :: has_numurbl           ! true => numurbl dimension is on dataset
+    real(r8), pointer :: arrayl3d(:,:,:)  ! generic global array
     character(len=32) :: subname = 'UrbanInput' ! subroutine name
 !-----------------------------------------------------------------------
-
-    if ( nlevurb == 0 ) return
 
     call get_proc_bounds(begg,endg)
 
     if (mode == 'initialize') then
+
+       ! Allocate dynamic memory
+       allocate(urbinp%canyon_hwr(begg:endg), &  
+                urbinp%wtlunit_roof(begg:endg), &  
+                urbinp%wtroad_perv(begg:endg), &
+                urbinp%em_roof(begg:endg), &     
+                urbinp%em_improad(begg:endg), &    
+                urbinp%em_perroad(begg:endg), &    
+                urbinp%em_wall(begg:endg), &    
+                urbinp%alb_roof_dir(begg:endg,numrad), &    
+                urbinp%alb_roof_dif(begg:endg,numrad), &    
+                urbinp%alb_improad_dir(begg:endg,numrad), &    
+                urbinp%alb_perroad_dir(begg:endg,numrad), &    
+                urbinp%alb_improad_dif(begg:endg,numrad), &    
+                urbinp%alb_perroad_dif(begg:endg,numrad), &    
+                urbinp%alb_wall_dir(begg:endg,numrad), &    
+                urbinp%alb_wall_dif(begg:endg,numrad), &
+                urbinp%ht_roof(begg:endg), &
+                urbinp%wind_hgt_canyon(begg:endg), &
+                urbinp%tk_wall(begg:endg,nlevurb), &
+                urbinp%tk_roof(begg:endg,nlevurb), &
+                urbinp%tk_improad(begg:endg,nlevurb), &
+                urbinp%cv_wall(begg:endg,nlevurb), &
+                urbinp%cv_roof(begg:endg,nlevurb), &
+                urbinp%cv_improad(begg:endg,nlevurb), &
+                urbinp%thick_wall(begg:endg), &
+                urbinp%thick_roof(begg:endg), &
+                urbinp%nlev_improad(begg:endg), &
+                urbinp%t_building_min(begg:endg), &
+                urbinp%t_building_max(begg:endg), &
+                stat=ier)
+       if (ier /= 0) then
+          write(iulog,*)'initUrbanInput: allocation error '; call endrun()
+       endif
 
        ! Read urban data
        
@@ -131,52 +163,6 @@ contains
        if (masterproc) then
           write(iulog,*) subname,trim(fsurdat)
        end if
-
-       ! Check whether this file has new-format urban data
-       call ncd_inqdid(ncid, 'numurbl', dimid, dimexist=has_numurbl)
-
-       ! If file doesn't have numurbl, then it is old-format urban;
-       ! in this case, set nlevurb to zero
-       if (.not. has_numurbl) then
-         nlevurb = 0
-         write(iulog,*)'PCT_URBAN is not multi-density, nlevurb set to 0'
-       end if
-
-       if ( nlevurb == 0 ) return
-
-       ! Allocate dynamic memory
-       allocate(urbinp%canyon_hwr(begg:endg,numurbl), &  
-                urbinp%wtlunit_roof(begg:endg,numurbl), &  
-                urbinp%wtroad_perv(begg:endg,numurbl), &
-                urbinp%em_roof(begg:endg,numurbl), &     
-                urbinp%em_improad(begg:endg,numurbl), &    
-                urbinp%em_perroad(begg:endg,numurbl), &    
-                urbinp%em_wall(begg:endg,numurbl), &    
-                urbinp%alb_roof_dir(begg:endg,numurbl,numrad), &    
-                urbinp%alb_roof_dif(begg:endg,numurbl,numrad), &    
-                urbinp%alb_improad_dir(begg:endg,numurbl,numrad), &    
-                urbinp%alb_perroad_dir(begg:endg,numurbl,numrad), &    
-                urbinp%alb_improad_dif(begg:endg,numurbl,numrad), &    
-                urbinp%alb_perroad_dif(begg:endg,numurbl,numrad), &    
-                urbinp%alb_wall_dir(begg:endg,numurbl,numrad), &    
-                urbinp%alb_wall_dif(begg:endg,numurbl,numrad), &
-                urbinp%ht_roof(begg:endg,numurbl), &
-                urbinp%wind_hgt_canyon(begg:endg,numurbl), &
-                urbinp%tk_wall(begg:endg,numurbl,nlevurb), &
-                urbinp%tk_roof(begg:endg,numurbl,nlevurb), &
-                urbinp%tk_improad(begg:endg,numurbl,nlevurb), &
-                urbinp%cv_wall(begg:endg,numurbl,nlevurb), &
-                urbinp%cv_roof(begg:endg,numurbl,nlevurb), &
-                urbinp%cv_improad(begg:endg,numurbl,nlevurb), &
-                urbinp%thick_wall(begg:endg,numurbl), &
-                urbinp%thick_roof(begg:endg,numurbl), &
-                urbinp%nlev_improad(begg:endg,numurbl), &
-                urbinp%t_building_min(begg:endg,numurbl), &
-                urbinp%t_building_max(begg:endg,numurbl), &
-                stat=ier)
-       if (ier /= 0) then
-          write(iulog,*)'initUrbanInput: allocation error '; call endrun()
-       endif
 
        call ncd_inqfdims (ncid, isgrid2d, ni, nj, ns)
        if (ldomain%ns /= ns .or. ldomain%ni /= ni .or. ldomain%nj /= nj) then
@@ -195,6 +181,14 @@ contains
           call endrun
        endif
 
+       call ncd_inqdid(ncid, 'numsolar', dimid)
+       call ncd_inqdlen(ncid, dimid, numsolar_i)
+       if (numsolar_i /= numsolar) then
+          write(iulog,*)trim(subname)// ': parameter numsolar= ',numsolar, &
+               'does not equal input dataset numsolar= ',numsolar_i
+          call endrun
+       endif
+
        call ncd_inqdid(ncid, 'numrad', dimid)
        call ncd_inqdlen(ncid, dimid, numrad_i)
        if (numrad_i /= numrad) then
@@ -202,13 +196,7 @@ contains
                'does not equal input dataset numrad= ',numrad_i
           call endrun
        endif
-       call ncd_inqdid(ncid, 'numurbl', dimid)
-       call ncd_inqdlen(ncid, dimid, numurbl_i)
-       if (numurbl_i /= numurbl) then
-          write(iulog,*)trim(subname)// ': parameter numurbl= ',numurbl, &
-               'does not equal input dataset numurbl= ',numurbl_i
-          call endrun
-       endif
+
        call ncd_io(ncid=ncid, varname='CANYON_HWR', flag='read', data=urbinp%canyon_hwr,&
             dim1name=grlnd, readvar=readvar)
        if (.not. readvar) call endrun( trim(subname)//' ERROR: CANYON_HWR NOT on fsurdat file' )
@@ -265,37 +253,33 @@ contains
             dim1name=grlnd, readvar=readvar)
        if (.not. readvar) call endrun( trim(subname)//' ERROR: T_BUILDING_MAX NOT on fsurdat file' )
 
-       call ncd_io(ncid=ncid, varname='ALB_IMPROAD_DIR', flag='read', data=urbinp%alb_improad_dir, &
-            dim1name=grlnd, readvar=readvar)
-       if (.not.readvar) call endrun( trim(subname)//' ERROR: ALB_IMPROAD_DIR NOT on fsurdat file' )
+       allocate(arrayl3d(begg:endg,numrad,numsolar))
 
-       call ncd_io(ncid=ncid, varname='ALB_IMPROAD_DIF', flag='read', data=urbinp%alb_improad_dif, &
+       call ncd_io(ncid=ncid, varname='ALB_IMPROAD', flag='read', data=arrayl3d, &
             dim1name=grlnd, readvar=readvar)
-       if (.not.readvar) call endrun( trim(subname)//' ERROR: ALB_IMPROAD_DIF NOT on fsurdat file' )
+       if (.not.readvar) call endrun( trim(subname)//' ERROR: ALB_IMPROAD NOT on fsurdat file' )
+       urbinp%alb_improad_dir(begg:endg,:) = arrayl3d(begg:endg,:,1)
+       urbinp%alb_improad_dif(begg:endg,:) = arrayl3d(begg:endg,:,2)
 
-       call ncd_io(ncid=ncid, varname='ALB_PERROAD_DIR', flag='read',data=urbinp%alb_perroad_dir, &
+       call ncd_io(ncid=ncid, varname='ALB_PERROAD', flag='read',data=arrayl3d, &
             dim1name=grlnd, readvar=readvar)
-       if (.not. readvar) call endrun( trim(subname)//' ERROR: ALB_PERROAD_DIR NOT on fsurdat file' )
+       if (.not. readvar) call endrun( trim(subname)//' ERROR: ALB_PERROAD NOT on fsurdat file' )
+       urbinp%alb_perroad_dir(begg:endg,:) = arrayl3d(begg:endg,:,1)
+       urbinp%alb_perroad_dif(begg:endg,:) = arrayl3d(begg:endg,:,2)
 
-       call ncd_io(ncid=ncid, varname='ALB_PERROAD_DIF', flag='read',data=urbinp%alb_perroad_dif, &
+       call ncd_io(ncid=ncid, varname='ALB_ROOF', flag='read', data=arrayl3d,  &
             dim1name=grlnd, readvar=readvar)
-       if (.not. readvar) call endrun( trim(subname)//' ERROR: ALB_PERROAD_DIF NOT on fsurdat file' )
+       if (.not. readvar) call endrun( trim(subname)//' ERROR: ALB_ROOF NOT on fsurdat file' )
+       urbinp%alb_roof_dir(begg:endg,:) = arrayl3d(begg:endg,:,1)
+       urbinp%alb_roof_dif(begg:endg,:) = arrayl3d(begg:endg,:,2 )
 
-       call ncd_io(ncid=ncid, varname='ALB_ROOF_DIR', flag='read', data=urbinp%alb_roof_dir,  &
+       call ncd_io(ncid=ncid, varname='ALB_WALL', flag='read', data=arrayl3d, &
             dim1name=grlnd, readvar=readvar)
-       if (.not. readvar) call endrun( trim(subname)//' ERROR: ALB_ROOF_DIR NOT on fsurdat file' )
+       if (.not. readvar) call endrun( trim(subname)//' ERROR: ALB_WALL NOT on fsurdat file' )
+       urbinp%alb_wall_dir(begg:endg,:) = arrayl3d(begg:endg,:,1)
+       urbinp%alb_wall_dif(begg:endg,:) = arrayl3d(begg:endg,:,2)
 
-       call ncd_io(ncid=ncid, varname='ALB_ROOF_DIF', flag='read', data=urbinp%alb_roof_dif,  &
-            dim1name=grlnd, readvar=readvar)
-       if (.not. readvar) call endrun( trim(subname)//' ERROR: ALB_ROOF_DIF NOT on fsurdat file' )
-
-       call ncd_io(ncid=ncid, varname='ALB_WALL_DIR', flag='read', data=urbinp%alb_wall_dir, &
-            dim1name=grlnd, readvar=readvar)
-       if (.not. readvar) call endrun( trim(subname)//' ERROR: ALB_WALL_DIR NOT on fsurdat file' )
-
-       call ncd_io(ncid=ncid, varname='ALB_WALL_DIF', flag='read', data=urbinp%alb_wall_dif, &
-            dim1name=grlnd, readvar=readvar)
-       if (.not. readvar) call endrun( trim(subname)//' ERROR: ALB_WALL_DIF NOT on fsurdat file' )
+       deallocate (arrayl3d)
 
        call ncd_io(ncid=ncid, varname='TK_IMPROAD', flag='read', data=urbinp%tk_improad, &
             dim1name=grlnd, readvar=readvar)
@@ -328,8 +312,6 @@ contains
        end if
 
     else if (mode == 'finalize') then
-
-       if ( nlevurb == 0 ) return
 
        deallocate(urbinp%canyon_hwr, &
                   urbinp%wtlunit_roof, &

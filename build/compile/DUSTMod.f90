@@ -85,7 +85,6 @@ contains
 !
 ! local pointers to implicit in arguments
 !
-    logical , pointer :: pactive(:)         ! true=>do computations on this pft (see reweightMod for details)
     integer , pointer :: pcolumn(:)         ! pft's column index
     integer , pointer :: plandunit(:)       ! pft's landunit index
     integer , pointer :: pgridcell(:)       ! pft's gridcell index
@@ -170,10 +169,9 @@ contains
 
     ! Assign local pointers to derived type scalar members (pft-level)
 
-    pactive         => pft%active
-    pgridcell       =>pft%gridcell
-    plandunit       =>pft%landunit
-    pcolumn         =>pft%column
+    pgridcell       => pft%gridcell
+    plandunit       => pft%landunit
+    pcolumn         => pft%column
     tlai            => pps%tlai
     tsai            => pps%tsai
     fv              => pps%fv
@@ -181,7 +179,7 @@ contains
     flx_mss_vrt_dst => pdf%flx_mss_vrt_dst
     flx_mss_vrt_dst_tot => pdf%flx_mss_vrt_dst_tot
    !local pointers from subgridAveMod/p2l_1d
-    wtlunit         =>pft%wtlunit
+    wtlunit         => pft%wtlunit
 
     ttlai(:) = 0._r8
 ! make lai average at landunit level
@@ -193,7 +191,7 @@ contains
     tlai_lu(:) = spval
     sumwt(:) = 0._r8
     do p = lbp,ubp
-       if (ttlai(p) /= spval .and. pactive(p) .and. wtlunit(p) /= 0._r8) then
+       if (ttlai(p) /= spval .and. wtlunit(p) /= 0._r8) then
           c = pcolumn(p)
           l = plandunit(p)
           if (sumwt(l) == 0._r8) tlai_lu(l) = 0._r8
@@ -420,8 +418,10 @@ contains
 !
 ! local pointers to implicit in arguments
 !
-    logical , pointer :: pactive(:)     ! true=>do computations on this pft (see reweightMod for details)
+    integer , pointer :: plandunit(:)   ! pft's landunit index
     integer , pointer :: pgridcell(:)   ! pft's gridcell index
+    integer , pointer :: ityplun(:)     ! landunit type
+    real(r8), pointer :: pwtgcell(:)    ! weight of pft relative to corresponding gridcell
     real(r8), pointer :: forc_t(:)      ! atm temperature (K)
     real(r8), pointer :: forc_pbot(:)   ! atm pressure (Pa)
     real(r8), pointer :: forc_rho(:)    ! atm density (kg/m**3)
@@ -440,7 +440,7 @@ contains
 ! !LOCAL VARIABLES
 !EOP
 !
-    integer  :: p,g,m,n               ! indices
+    integer  :: p,l,g,m,n             ! indices
     real(r8) :: vsc_dyn_atm(lbp:ubp)  ! [kg m-1 s-1] Dynamic viscosity of air
     real(r8) :: vsc_knm_atm(lbp:ubp)  ! [m2 s-1] Kinematic viscosity of atmosphere
     real(r8) :: shm_nbr_xpn           ! [frc] Sfc-dep exponent for aerosol-diffusion dependence on Schmidt number
@@ -465,10 +465,15 @@ contains
     forc_rho  => clm_a2l%forc_rho
     forc_t    => clm_a2l%forc_t
 
+    ! Assign local pointers to derived type members (landunit-level)
+
+    ityplun   => lun%itype
+
     ! Assign local pointers to derived type members (pft-level)
 
-    pactive   => pft%active
-    pgridcell =>pft%gridcell
+    plandunit => pft%landunit
+    pgridcell => pft%gridcell
+    pwtgcell  => pft%wtgcell  
     fv        => pps%fv
     ram1      => pps%ram1
     vlc_trb   => pdf%vlc_trb
@@ -478,7 +483,9 @@ contains
     vlc_trb_4 => pdf%vlc_trb_4
 
     do p = lbp,ubp
-       if (pactive(p)) then
+       l = plandunit(p)
+       ! Note: some glacier_mec pfts may have zero weight
+       if (pwtgcell(p)>0._r8 .or. ityplun(l)==istice_mec) then
           g = pgridcell(p)
 
           ! from subroutine dst_dps_dry (consider adding sanity checks from line 212)
@@ -507,7 +514,8 @@ contains
 
     do m = 1, ndst
        do p = lbp,ubp
-          if (pactive(p)) then
+          l = plandunit(p)
+          if (pwtgcell(p)>0._r8 .or. ityplun(l)==istice_mec) then
              g = pgridcell(p)
              
              stk_nbr = vlc_grv(p,m) * fv(p) * fv(p) / (grav * vsc_knm_atm(p))  ![frc] SeP97 p.965
@@ -533,7 +541,8 @@ contains
 
     do m = 1, ndst
        do p = lbp,ubp
-          if (pactive(p)) then
+          l = plandunit(p)
+          if (pwtgcell(p)>0._r8 .or. ityplun(l)==istice_mec) then
              rss_trb = ram1(p) + rss_lmn(p,m) + ram1(p) * rss_lmn(p,m) * vlc_grv(p,m) ![s m-1]
              vlc_trb(p,m) = 1.0_r8 / rss_trb                                          ![m s-1]
           end if
@@ -541,7 +550,8 @@ contains
     end do
 
     do p = lbp,ubp
-       if (pactive(p)) then
+       l = plandunit(p)
+       if (pwtgcell(p)>0._r8 .or. ityplun(l)==istice_mec) then
           vlc_trb_1(p) = vlc_trb(p,1)
           vlc_trb_2(p) = vlc_trb(p,2)
           vlc_trb_3(p) = vlc_trb(p,3)
@@ -573,8 +583,8 @@ contains
 !
 ! !USES
     use shr_const_mod, only: SHR_CONST_PI, SHR_CONST_RDAIR
-    use shr_spfn_mod,  only: erf => shr_spfn_erf
     use decompMod, only : get_proc_bounds
+    use shr_spfn_mod, only: erf => shr_spfn_erf
 !
 ! !ARGUMENTS:
     implicit none
@@ -644,6 +654,9 @@ contains
     real(r8), parameter :: dmt_slt_opt = 75.0e-6_r8    ! [m] Optim diam for saltation
     real(r8), parameter :: dns_slt = 2650.0_r8         ! [kg m-3] Density of optimal saltation particles
 
+    ! declare erf intrinsic function
+    real(r8) :: dum     ! dummy variable for erf test
+
     integer :: begp, endp   ! per-proc beginning and ending pft indices
     integer :: begc, endc   ! per-proc beginning and ending column indices 
     integer :: begl, endl   ! per-proc beginning and ending landunit indices
@@ -696,8 +709,8 @@ contains
 
     call get_proc_bounds(begg, endg, begl, endl, begc, endc, begp, endp)
     do c = begc, endc
-      l =col%landunit(c)
-      if (.not.lun%lakpoi(l)) then
+      l = col%landunit(c)
+      if (.not. lun%lakpoi(l)) then
          mbl_bsn_fct(c) = 1.0_r8
       end if
     end do

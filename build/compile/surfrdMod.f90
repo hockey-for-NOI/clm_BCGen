@@ -21,14 +21,13 @@ module surfrdMod
 ! !USES:
   use shr_kind_mod, only : r8 => shr_kind_r8
   use abortutils  , only : endrun
-  use clm_varpar  , only : nlevsoifl, numpft, &
+  use clm_varpar  , only : nlevsoi, numpft, &
                            maxpatch_pft, numcft, maxpatch, &
-                           npatch_urban_tbd, npatch_urban_hd, npatch_urban_md, &
-                           numurbl, npatch_lake, npatch_wet, &
+                           npatch_urban, npatch_lake, npatch_wet, &
                            npatch_glacier,maxpatch_urb, npatch_glacier_mec, &
                            maxpatch_glcmec
   use clm_varctl  , only : glc_topomax, iulog, scmlat, scmlon, single_column, &
-                           create_glacier_mec_landunit
+                           create_glacier_mec_landunit, use_cndv
   use clm_varsur  , only : wtxy, vegxy, topoxy, pctspec
   use decompMod   , only : get_proc_bounds
   use clmtype
@@ -59,10 +58,6 @@ module surfrdMod
   private :: surfrd_wtxy_special
   private :: surfrd_wtxy_veg_all
   private :: surfrd_wtxy_veg_dgvm
-!
-! !PRIVATE DATA MEMBERS:
-  ! default multiplication factor for epsilon for error checks
-  real(r8), private, parameter :: eps_fact = 2._r8
 !EOP
 !-----------------------------------------------------------------------
 
@@ -607,18 +602,18 @@ contains
 
     ! Obtain vegetated landunit info
 
-
-
-
-
-
-
-    if (allocate_all_vegpfts) then
-       call surfrd_wtxy_veg_all(ncid, ldomain%ns, ldomain%pftm)
+    if (use_cndv) then
+       if (create_crop_landunit) then ! CNDV means allocate_all_vegpfts = .true.
+          call surfrd_wtxy_veg_all(ncid, ldomain%ns, ldomain%pftm)
+       end if
+       call surfrd_wtxy_veg_dgvm()
     else
-       call endrun (trim(subname) // 'only allocate_all_vegpfts is supported')
+       if (allocate_all_vegpfts) then
+          call surfrd_wtxy_veg_all(ncid, ldomain%ns, ldomain%pftm)
+       else
+          call endrun (trim(subname) // 'only allocate_all_vegpfts is supported')
+       end if
     end if
-
 
     call ncd_pio_closefile(ncid)
 
@@ -644,8 +639,7 @@ contains
 ! !USES:
     use pftvarcon     , only : noveg
     use UrbanInputMod , only : urbinp
-    use clm_varpar    , only : maxpatch_glcmec, nlevurb
-    use clm_varcon    , only : udens_base, udens_tbd, udens_hd, udens_md 
+    use clm_varpar    , only : maxpatch_glcmec
 !
 ! !ARGUMENTS:
     implicit none
@@ -664,7 +658,7 @@ contains
     integer  :: n,nl,nurb,g                ! indices
     integer  :: begg,endg                  ! gcell beg/end
     integer  :: dimid,varid                ! netCDF id's
-    real(r8) :: nlevsoidata(nlevsoifl)
+    real(r8) :: nlevsoidata(nlevsoi)
     logical  :: found                      ! temporary for error check
     integer  :: nindx                      ! temporary for error check
     integer  :: ier                        ! error status
@@ -674,11 +668,9 @@ contains
     real(r8),pointer :: pctgla(:)      ! percent of grid cell is glacier
     real(r8),pointer :: pctlak(:)      ! percent of grid cell is lake
     real(r8),pointer :: pctwet(:)      ! percent of grid cell is wetland
-    real(r8),pointer :: pcturb(:,:)      ! percent of grid cell is urbanized
+    real(r8),pointer :: pcturb(:)      ! percent of grid cell is urbanized
     real(r8),pointer :: pctglc_mec(:,:)   ! percent of grid cell is glacier_mec (in each elev class)
     real(r8),pointer :: pctglc_mec_tot(:) ! percent of grid cell is glacier (sum over classes)
-    real(r8),pointer :: pcturb_tot(:)  ! percent of grid cell is urban (sum over density classes)
-    integer  :: dindx                      ! temporary for error check
     real(r8),pointer :: topoglc_mec(:,:)  ! surface elevation in each elev class
     character(len=32) :: subname = 'surfrd_wtxy_special'  ! subroutine name
     real(r8) closelat,closelon
@@ -687,7 +679,7 @@ contains
     call get_proc_bounds(begg,endg)
 
     allocate(pctgla(begg:endg),pctlak(begg:endg))
-    allocate(pctwet(begg:endg),pcturb(begg:endg,numurbl),pcturb_tot(begg:endg))
+    allocate(pctwet(begg:endg),pcturb(begg:endg))
     if (create_glacier_mec_landunit) then
        allocate(pctglc_mec(begg:endg,maxpatch_glcmec))
        allocate(pctglc_mec_tot(begg:endg))
@@ -695,7 +687,7 @@ contains
        allocate(glc_topomax(0:maxpatch_glcmec))
     endif
 
-    call check_dim(ncid, 'nlevsoi', nlevsoifl)
+    call check_dim(ncid, 'nlevsoi', nlevsoi)
 
        ! Obtain non-grid surface properties of surface dataset other than percent pft
 
@@ -711,25 +703,9 @@ contains
          dim1name=grlnd, readvar=readvar)
     if (.not. readvar) call endrun( trim(subname)//' ERROR: PCT_GLACIER NOT on surfdata file' )
 
-    ! If PCT_URBAN is not multi-density then set pcturb and nlevurb to zero 
-    if (nlevurb == 0) then
-      pcturb = 0._r8
-      write(iulog,*)'PCT_URBAN is not multi-density, pcturb set to 0'
-    else
-      call ncd_io(ncid=ncid, varname='PCT_URBAN'  , flag='read', data=pcturb, &
-           dim1name=grlnd, readvar=readvar)
-      if (.not. readvar) call endrun( trim(subname)//' ERROR: PCT_URBAN NOT on surfdata file' )
-    end if
-    if ( nlevurb == 0 )then
-       if ( any(pcturb > 0.0_r8) ) call endrun( trim(subname)//' ERROR: PCT_URBAN MUST be zero when nlevurb=0' )
-    end if
-
-    pcturb_tot(:) = 0._r8
-    do n = 1, numurbl
-       do nl = begg,endg
-          pcturb_tot(nl) = pcturb_tot(nl) + pcturb(nl,n)
-       enddo
-    enddo
+    call ncd_io(ncid=ncid, varname='PCT_URBAN'  , flag='read', data=pcturb, &
+         dim1name=grlnd, readvar=readvar)
+    if (.not. readvar) call endrun( trim(subname)//' ERROR: PCT_URBAN NOT on surfdata file' )
 
     if (create_glacier_mec_landunit) then          ! call ncd_io_gs_int2d
 
@@ -822,13 +798,13 @@ contains
           endif
        enddo
 
-       pctspec = pctwet + pctlak + pcturb_tot + pctglc_mec_tot
+       pctspec = pctwet + pctlak + pcturb + pctglc_mec_tot
 
        if ( masterproc ) write(iulog,*) '   elevation limits = ', glc_topomax
 
     else
 
-       pctspec = pctwet + pctlak + pcturb_tot + pctgla
+       pctspec = pctwet + pctlak + pcturb + pctgla
  
     endif
 
@@ -861,52 +837,18 @@ contains
        vegxy(nl,npatch_glacier)= noveg
        wtxy(nl,npatch_glacier) = pctgla(nl)/100._r8
 
-       ! Initialize urban tall building district weights
-       n = udens_tbd - udens_base
-       do nurb = npatch_urban_tbd, npatch_urban_hd-1 
-          vegxy(nl,nurb) = noveg
-          wtxy(nl,nurb)  = pcturb(nl,n) / 100._r8
-       end do
-       if ( pcturb(nl,n) > 0.0_r8 )then
-          wtxy(nl,npatch_urban_tbd)   = wtxy(nl,npatch_urban_tbd)*urbinp%wtlunit_roof(nl,n)
-          wtxy(nl,npatch_urban_tbd+1) = wtxy(nl,npatch_urban_tbd+1)*(1 - urbinp%wtlunit_roof(nl,n))/3
-          wtxy(nl,npatch_urban_tbd+2) = wtxy(nl,npatch_urban_tbd+2)*(1 - urbinp%wtlunit_roof(nl,n))/3
-          wtxy(nl,npatch_urban_tbd+3) = wtxy(nl,npatch_urban_tbd+3)*(1 - urbinp%wtlunit_roof(nl,n))/3 &
-                                        * (1.-urbinp%wtroad_perv(nl,n))
-          wtxy(nl,npatch_urban_tbd+4) = wtxy(nl,npatch_urban_tbd+4)*(1 - urbinp%wtlunit_roof(nl,n))/3 &
-                                        * urbinp%wtroad_perv(nl,n)
-       end if
+       ! Initialize urban weights
 
-       ! Initialize urban high density weights
-       n = udens_hd - udens_base
-       do nurb = npatch_urban_hd, npatch_urban_md-1 
+       do nurb = npatch_urban, npatch_lake-1 
           vegxy(nl,nurb) = noveg
-          wtxy(nl,nurb)  = pcturb(nl,n) / 100._r8
+          wtxy(nl,nurb)  = pcturb(nl) / 100._r8
        end do
-       if ( pcturb(nl,n) > 0.0_r8 )then
-          wtxy(nl,npatch_urban_hd)   = wtxy(nl,npatch_urban_hd)*urbinp%wtlunit_roof(nl,n)
-          wtxy(nl,npatch_urban_hd+1) = wtxy(nl,npatch_urban_hd+1)*(1 - urbinp%wtlunit_roof(nl,n))/3
-          wtxy(nl,npatch_urban_hd+2) = wtxy(nl,npatch_urban_hd+2)*(1 - urbinp%wtlunit_roof(nl,n))/3
-          wtxy(nl,npatch_urban_hd+3) = wtxy(nl,npatch_urban_hd+3)*(1 - urbinp%wtlunit_roof(nl,n))/3 &
-                                        * (1.-urbinp%wtroad_perv(nl,n))
-          wtxy(nl,npatch_urban_hd+4) = wtxy(nl,npatch_urban_hd+4)*(1 - urbinp%wtlunit_roof(nl,n))/3 &
-                                        * urbinp%wtroad_perv(nl,n)
-       end if
-
-       ! Initialize urban medium density weights
-       n = udens_md - udens_base
-       do nurb = npatch_urban_md, npatch_lake-1 
-          vegxy(nl,nurb) = noveg
-          wtxy(nl,nurb)  = pcturb(nl,n) / 100._r8
-       end do
-       if ( pcturb(nl,n) > 0.0_r8 )then
-          wtxy(nl,npatch_urban_md)   = wtxy(nl,npatch_urban_md)*urbinp%wtlunit_roof(nl,n)
-          wtxy(nl,npatch_urban_md+1) = wtxy(nl,npatch_urban_md+1)*(1 - urbinp%wtlunit_roof(nl,n))/3
-          wtxy(nl,npatch_urban_md+2) = wtxy(nl,npatch_urban_md+2)*(1 - urbinp%wtlunit_roof(nl,n))/3
-          wtxy(nl,npatch_urban_md+3) = wtxy(nl,npatch_urban_md+3)*(1 - urbinp%wtlunit_roof(nl,n))/3 &
-                                        * (1.-urbinp%wtroad_perv(nl,n))
-          wtxy(nl,npatch_urban_md+4) = wtxy(nl,npatch_urban_md+4)*(1 - urbinp%wtlunit_roof(nl,n))/3 &
-                                        * urbinp%wtroad_perv(nl,n)
+       if ( pcturb(nl) > 0.0_r8 )then
+          wtxy(nl,npatch_urban)   = wtxy(nl,npatch_urban)*urbinp%wtlunit_roof(nl)
+          wtxy(nl,npatch_urban+1) = wtxy(nl,npatch_urban+1)*(1 - urbinp%wtlunit_roof(nl))/3
+          wtxy(nl,npatch_urban+2) = wtxy(nl,npatch_urban+2)*(1 - urbinp%wtlunit_roof(nl))/3
+          wtxy(nl,npatch_urban+3) = wtxy(nl,npatch_urban+3)*(1 - urbinp%wtlunit_roof(nl))/3 * (1.-urbinp%wtroad_perv(nl))
+          wtxy(nl,npatch_urban+4) = wtxy(nl,npatch_urban+4)*(1 - urbinp%wtlunit_roof(nl))/3 * urbinp%wtroad_perv(nl)
        end if
 
     end do
@@ -915,88 +857,84 @@ contains
 
     found = .false.
     do nl = begg,endg
-      do n = 1, numurbl
-        if ( pcturb(nl,n) > 0.0_r8 ) then
-          if (urbinp%canyon_hwr(nl,n)            .le. 0._r8 .or. &
-              urbinp%em_improad(nl,n)            .le. 0._r8 .or. &
-              urbinp%em_perroad(nl,n)            .le. 0._r8 .or. &
-              urbinp%em_roof(nl,n)               .le. 0._r8 .or. &
-              urbinp%em_wall(nl,n)               .le. 0._r8 .or. &
-              urbinp%ht_roof(nl,n)               .le. 0._r8 .or. &
-              urbinp%thick_roof(nl,n)            .le. 0._r8 .or. &
-              urbinp%thick_wall(nl,n)            .le. 0._r8 .or. &
-              urbinp%t_building_max(nl,n)        .le. 0._r8 .or. &
-              urbinp%t_building_min(nl,n)        .le. 0._r8 .or. &
-              urbinp%wind_hgt_canyon(nl,n)       .le. 0._r8 .or. &
-              urbinp%wtlunit_roof(nl,n)          .le. 0._r8 .or. &
-              urbinp%wtroad_perv(nl,n)           .le. 0._r8 .or. &
-              any(urbinp%alb_improad_dir(nl,n,:) .le. 0._r8) .or. &
-              any(urbinp%alb_improad_dif(nl,n,:) .le. 0._r8) .or. &
-              any(urbinp%alb_perroad_dir(nl,n,:) .le. 0._r8) .or. &
-              any(urbinp%alb_perroad_dif(nl,n,:) .le. 0._r8) .or. &
-              any(urbinp%alb_roof_dir(nl,n,:)    .le. 0._r8) .or. &
-              any(urbinp%alb_roof_dif(nl,n,:)    .le. 0._r8) .or. &
-              any(urbinp%alb_wall_dir(nl,n,:)    .le. 0._r8) .or. &
-              any(urbinp%alb_wall_dif(nl,n,:)    .le. 0._r8) .or. &
-              any(urbinp%tk_roof(nl,n,:)         .le. 0._r8) .or. &
-              any(urbinp%tk_wall(nl,n,:)         .le. 0._r8) .or. &
-              any(urbinp%cv_roof(nl,n,:)         .le. 0._r8) .or. &
-              any(urbinp%cv_wall(nl,n,:)         .le. 0._r8)) then
+       if ( pcturb(nl) > 0.0_r8 )then
+         if (urbinp%canyon_hwr(nl)            .le. 0._r8 .or. &
+             urbinp%em_improad(nl)            .le. 0._r8 .or. &
+             urbinp%em_perroad(nl)            .le. 0._r8 .or. &
+             urbinp%em_roof(nl)               .le. 0._r8 .or. &
+             urbinp%em_wall(nl)               .le. 0._r8 .or. &
+             urbinp%ht_roof(nl)               .le. 0._r8 .or. &
+             urbinp%thick_roof(nl)            .le. 0._r8 .or. &
+             urbinp%thick_wall(nl)            .le. 0._r8 .or. &
+             urbinp%t_building_max(nl)        .le. 0._r8 .or. &
+             urbinp%t_building_min(nl)        .le. 0._r8 .or. &
+             urbinp%wind_hgt_canyon(nl)       .le. 0._r8 .or. &
+             urbinp%wtlunit_roof(nl)          .le. 0._r8 .or. &
+             urbinp%wtroad_perv(nl)           .le. 0._r8 .or. &
+             any(urbinp%alb_improad_dir(nl,:) .le. 0._r8) .or. &
+             any(urbinp%alb_improad_dif(nl,:) .le. 0._r8) .or. &
+             any(urbinp%alb_perroad_dir(nl,:) .le. 0._r8) .or. &
+             any(urbinp%alb_perroad_dif(nl,:) .le. 0._r8) .or. &
+             any(urbinp%alb_roof_dir(nl,:)    .le. 0._r8) .or. &
+             any(urbinp%alb_roof_dif(nl,:)    .le. 0._r8) .or. &
+             any(urbinp%alb_wall_dir(nl,:)    .le. 0._r8) .or. &
+             any(urbinp%alb_wall_dif(nl,:)    .le. 0._r8) .or. &
+             any(urbinp%tk_roof(nl,:)         .le. 0._r8) .or. &
+             any(urbinp%tk_wall(nl,:)         .le. 0._r8) .or. &
+             any(urbinp%cv_roof(nl,:)         .le. 0._r8) .or. &
+             any(urbinp%cv_wall(nl,:)         .le. 0._r8)) then
             found = .true.
             nindx = nl
-            dindx = n
             exit
-          else
-            if (urbinp%nlev_improad(nl,n) .gt. 0) then
-               nlev = urbinp%nlev_improad(nl,n)
-               if (any(urbinp%tk_improad(nl,n,1:nlev) .le. 0._r8) .or. &
-                   any(urbinp%cv_improad(nl,n,1:nlev) .le. 0._r8)) then
+         else
+            if (urbinp%nlev_improad(nl) .gt. 0) then
+               nlev = urbinp%nlev_improad(nl)
+               if (any(urbinp%tk_improad(nl,1:nlev) .le. 0._r8) .or. &
+                   any(urbinp%cv_improad(nl,1:nlev) .le. 0._r8)) then
                   found = .true.
                   nindx = nl
-                  dindx = n
                   exit
                end if
             end if
-          end if
-          if (found) exit
-        end if
-      end do
+         end if
+         if (found) exit
+       end if
     end do
     if ( found ) then
        write(iulog,*)'surfrd error: no valid urban data for nl=',nindx
-       write(iulog,*)'density type:    ',dindx
-       write(iulog,*)'canyon_hwr:      ',urbinp%canyon_hwr(nindx,dindx)
-       write(iulog,*)'em_improad:      ',urbinp%em_improad(nindx,dindx)
-       write(iulog,*)'em_perroad:      ',urbinp%em_perroad(nindx,dindx)
-       write(iulog,*)'em_roof:         ',urbinp%em_roof(nindx,dindx)
-       write(iulog,*)'em_wall:         ',urbinp%em_wall(nindx,dindx)
-       write(iulog,*)'ht_roof:         ',urbinp%ht_roof(nindx,dindx)
-       write(iulog,*)'thick_roof:      ',urbinp%thick_roof(nindx,dindx)
-       write(iulog,*)'thick_wall:      ',urbinp%thick_wall(nindx,dindx)
-       write(iulog,*)'t_building_max:  ',urbinp%t_building_max(nindx,dindx)
-       write(iulog,*)'t_building_min:  ',urbinp%t_building_min(nindx,dindx)
-       write(iulog,*)'wind_hgt_canyon: ',urbinp%wind_hgt_canyon(nindx,dindx)
-       write(iulog,*)'wtlunit_roof:    ',urbinp%wtlunit_roof(nindx,dindx)
-       write(iulog,*)'wtroad_perv:     ',urbinp%wtroad_perv(nindx,dindx)
-       write(iulog,*)'alb_improad_dir: ',urbinp%alb_improad_dir(nindx,dindx,:)
-       write(iulog,*)'alb_improad_dif: ',urbinp%alb_improad_dif(nindx,dindx,:)
-       write(iulog,*)'alb_perroad_dir: ',urbinp%alb_perroad_dir(nindx,dindx,:)
-       write(iulog,*)'alb_perroad_dif: ',urbinp%alb_perroad_dif(nindx,dindx,:)
-       write(iulog,*)'alb_roof_dir:    ',urbinp%alb_roof_dir(nindx,dindx,:)
-       write(iulog,*)'alb_roof_dif:    ',urbinp%alb_roof_dif(nindx,dindx,:)
-       write(iulog,*)'alb_wall_dir:    ',urbinp%alb_wall_dir(nindx,dindx,:)
-       write(iulog,*)'alb_wall_dif:    ',urbinp%alb_wall_dif(nindx,dindx,:)
-       write(iulog,*)'tk_roof:         ',urbinp%tk_roof(nindx,dindx,:)
-       write(iulog,*)'tk_wall:         ',urbinp%tk_wall(nindx,dindx,:)
-       write(iulog,*)'cv_roof:         ',urbinp%cv_roof(nindx,dindx,:)
-       write(iulog,*)'cv_wall:         ',urbinp%cv_wall(nindx,dindx,:)
-       if (urbinp%nlev_improad(nindx,dindx) .gt. 0) then
-          nlev = urbinp%nlev_improad(nindx,dindx)
-          write(iulog,*)'tk_improad: ',urbinp%tk_improad(nindx,dindx,1:nlev)
-          write(iulog,*)'cv_improad: ',urbinp%cv_improad(nindx,dindx,1:nlev)
+       write(iulog,*)'canyon_hwr:      ',urbinp%canyon_hwr(nindx)
+       write(iulog,*)'em_improad:      ',urbinp%em_improad(nindx)
+       write(iulog,*)'em_perroad:      ',urbinp%em_perroad(nindx)
+       write(iulog,*)'em_roof:         ',urbinp%em_roof(nindx)
+       write(iulog,*)'em_wall:         ',urbinp%em_wall(nindx)
+       write(iulog,*)'ht_roof:         ',urbinp%ht_roof(nindx)
+       write(iulog,*)'thick_roof:      ',urbinp%thick_roof(nindx)
+       write(iulog,*)'thick_wall:      ',urbinp%thick_wall(nindx)
+       write(iulog,*)'t_building_max:  ',urbinp%t_building_max(nindx)
+       write(iulog,*)'t_building_min:  ',urbinp%t_building_min(nindx)
+       write(iulog,*)'wind_hgt_canyon: ',urbinp%wind_hgt_canyon(nindx)
+       write(iulog,*)'wtlunit_roof:    ',urbinp%wtlunit_roof(nindx)
+       write(iulog,*)'wtroad_perv:     ',urbinp%wtroad_perv(nindx)
+       write(iulog,*)'alb_improad_dir: ',urbinp%alb_improad_dir(nindx,:)
+       write(iulog,*)'alb_improad_dif: ',urbinp%alb_improad_dif(nindx,:)
+       write(iulog,*)'alb_perroad_dir: ',urbinp%alb_perroad_dir(nindx,:)
+       write(iulog,*)'alb_perroad_dif: ',urbinp%alb_perroad_dif(nindx,:)
+       write(iulog,*)'alb_roof_dir:    ',urbinp%alb_roof_dir(nindx,:)
+       write(iulog,*)'alb_roof_dif:    ',urbinp%alb_roof_dif(nindx,:)
+       write(iulog,*)'alb_wall_dir:    ',urbinp%alb_wall_dir(nindx,:)
+       write(iulog,*)'alb_wall_dif:    ',urbinp%alb_wall_dif(nindx,:)
+       write(iulog,*)'tk_roof:         ',urbinp%tk_roof(nindx,:)
+       write(iulog,*)'tk_wall:         ',urbinp%tk_wall(nindx,:)
+       write(iulog,*)'cv_roof:         ',urbinp%cv_roof(nindx,:)
+       write(iulog,*)'cv_wall:         ',urbinp%cv_wall(nindx,:)
+       if (urbinp%nlev_improad(nindx) .gt. 0) then
+          nlev = urbinp%nlev_improad(nindx)
+          write(iulog,*)'tk_improad: ',urbinp%tk_improad(nindx,1:nlev)
+          write(iulog,*)'cv_improad: ',urbinp%cv_improad(nindx,1:nlev)
        end if
        call endrun()
     end if
+
     ! Initialize glacier_mec weights
 
     if (create_glacier_mec_landunit) then
@@ -1011,7 +949,7 @@ contains
        deallocate(pctglc_mec, pctglc_mec_tot, topoglc_mec)
     endif          ! create_glacier_mec_landunit
 
-    deallocate(pctgla,pctlak,pctwet,pcturb,pcturb_tot)
+    deallocate(pctgla,pctlak,pctwet,pcturb)
 
   end subroutine surfrd_wtxy_special
 
@@ -1027,10 +965,8 @@ contains
 ! Determine wtxy and veg arrays for non-dynamic landuse mode
 !
 ! !USES:
-    use clm_varctl  , only : create_crop_landunit, fpftdyn, irrigate
-    use pftvarcon   , only : nc3crop, nc3irrig, npcropmin, &
-                             ncorn, ncornirrig, nsoybean, nsoybeanirrig, &
-                             nscereal, nscerealirrig, nwcereal, nwcerealirrig
+    use clm_varctl  , only : create_crop_landunit
+    use pftvarcon   , only : nirrig, npcropmin
     use spmdMod     , only : mpicom, MPI_LOGICAL, MPI_LOR
 !
 ! !ARGUMENTS:
@@ -1080,11 +1016,16 @@ contains
           ! (convert pctpft from percent with respect to gridcel to percent with 
           ! respect to vegetated landunit)
 
-          ! THESE CHECKS NEEDS TO BE THE SAME AS IN pftdynMod.F90!
-          if (pctspec(nl) < 100._r8 * (1._r8 - eps_fact*epsilon(1._r8))) then  ! pctspec not within eps_fact*epsilon of 100
+          if (pctspec(nl) < 100._r8) then
              sumpct = 0._r8
              do m = 0,numpft
                 sumpct = sumpct + pctpft(nl,m) * 100._r8/(100._r8-pctspec(nl))
+                if (m == nirrig .and. .not. create_crop_landunit) then
+                   if (pctpft(nl,m) > 0._r8) then
+                      call endrun( trim(subname)//' ERROR surfrdMod: irrigated crop'// &
+                                   ' PFT requires create_crop_landunit=.true.' )
+                   end if
+                end if
              end do
              if (abs(sumpct - 100._r8) > 0.1e-4_r8) then
                 write(iulog,*) trim(subname)//' ERROR: sum(pct) over numpft+1 is not = 100.'
@@ -1110,7 +1051,6 @@ contains
 
        end if
     end do
-
     call mpi_allreduce(crop,crop_prog,1,MPI_LOGICAL,MPI_LOR,mpicom,ier)
     if (ier /= 0) then
        write(iulog,*) trim(subname)//' mpi_allreduce error = ',ier
@@ -1118,43 +1058,8 @@ contains
     endif
     if (crop_prog .and. .not. create_crop_landunit) then
        call endrun( trim(subname)//' ERROR: prognostic crop '// &
-                    'PFTs require create_crop_landunit=.true.' )
+                    'PFTs requires create_crop_landunit=.true.' )
     end if
-    if (crop_prog .and. fpftdyn /= ' ') &
-       call endrun( trim(subname)//' ERROR: prognostic crop '// &
-                    'is incompatible with transient landuse' )
-    if (.not. crop_prog .and. irrigate) then
-       call endrun( trim(subname)//' ERROR surfrdMod: irrigate = .true. requires CROP model active.' )
-    end if
-
-    if (masterproc .and. crop_prog .and. .not. irrigate) then
-       write(iulog,*) trim(subname)//' crop=.T. and irrigate=.F., so merging irrigated pfts with rainfed' ! in the following do-loop
-    end if
-
-! repeat do-loop for error checking and for rainfed crop case
-
-    do nl = begg,endg
-       if (pftm(nl) >= 0) then
-          if (pctspec(nl) < 100._r8 * (1._r8 - eps_fact*epsilon(1._r8))) then  ! pctspec not within eps_fact*epsilon of 100
-             if (.not. crop_prog .and. wtxy(nl,nc3irrig+1) > 0._r8) then
-                call endrun( trim(subname)//' ERROR surfrdMod: irrigated crop PFT requires CROP model active.' )
-             end if
-             if (crop_prog .and. .not. irrigate) then
-                wtxy(nl,nc3crop+1)       = wtxy(nl,nc3crop+1)  + wtxy(nl,nc3irrig+1)
-                wtxy(nl,nc3irrig+1)      = 0._r8
-                wtxy(nl,ncorn+1)         = wtxy(nl,ncorn+1)    + wtxy(nl,ncornirrig+1)
-                wtxy(nl,ncornirrig+1)    = 0._r8
-                wtxy(nl,nscereal+1)      = wtxy(nl,nscereal+1) + wtxy(nl,nscerealirrig+1)
-                wtxy(nl,nscerealirrig+1) = 0._r8
-                wtxy(nl,nwcereal+1)      = wtxy(nl,nwcereal+1) + wtxy(nl,nwcerealirrig+1)
-                wtxy(nl,nwcerealirrig+1) = 0._r8
-                wtxy(nl,nsoybean+1)      = wtxy(nl,nsoybean+1) + wtxy(nl,nsoybeanirrig+1)
-                wtxy(nl,nsoybeanirrig+1) = 0._r8
-             end if
-          end if
-       end if
-    end do
-
 
     deallocate(pctpft)
 

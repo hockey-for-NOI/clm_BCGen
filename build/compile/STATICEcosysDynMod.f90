@@ -26,9 +26,7 @@ module STATICEcosysdynMOD
   save
 !
 ! !PUBLIC MEMBER FUNCTIONS:
-
   public :: EcosystemDyn         ! CLMSP Ecosystem dynamics: phenology, vegetation
-
   public :: EcosystemDynini      ! Dynamically allocate memory
   public :: interpMonthlyVeg     ! interpolate monthly vegetation data
   public :: readAnnualVegetation ! Read in annual vegetation (needed for Dry-deposition)
@@ -99,7 +97,6 @@ contains
 
   end subroutine EcosystemDynini
 
-
 !-----------------------------------------------------------------------
 !BOP
 !
@@ -135,9 +132,8 @@ contains
 !
 ! local pointers to implicit in arguments
 !
-    real(r8), pointer :: frac_sno(:) ! fraction of ground covered by snow (0 to 1)
     integer , pointer :: pcolumn(:)  ! column index associated with each pft
-    real(r8), pointer :: snow_depth(:)   ! snow height (m)
+    real(r8), pointer :: snowdp(:)   ! snow height (m)
     integer , pointer :: ivt(:)      ! pft vegetation type
 !
 ! local pointers to implicit out arguments
@@ -163,12 +159,11 @@ contains
 
        ! Assign local pointers to derived type scalar members (column-level)
 
-       frac_sno => cps%frac_sno 
-       snow_depth  => cps%snow_depth
+       snowdp  => cps%snowdp
 
        ! Assign local pointers to derived type scalar members (pftlevel)
 
-       pcolumn =>pft%column
+       pcolumn => pft%column
        tlai    => pps%tlai
        tsai    => pps%tsai
        elai    => pps%elai
@@ -176,7 +171,7 @@ contains
        htop    => pps%htop
        hbot    => pps%hbot
        frac_veg_nosno_alb => pps%frac_veg_nosno_alb
-       ivt     =>pft%itype
+       ivt     => pft%itype
 
        do fp = 1, num_nolakep
           p = filter_nolakep(fp)
@@ -211,18 +206,15 @@ contains
           ! Wang and Zeng, 2007. 
 
           if (ivt(p) > noveg .and. ivt(p) <= nbrdlf_dcd_brl_shrub ) then
-             ol = min( max(snow_depth(c)-hbot(p), 0._r8), htop(p)-hbot(p))
+             ol = min( max(snowdp(c)-hbot(p), 0._r8), htop(p)-hbot(p))
              fb = 1._r8 - ol / max(1.e-06_r8, htop(p)-hbot(p))
           else
-             fb = 1._r8 - max(min(snow_depth(c),0.2_r8),0._r8)/0.2_r8   ! 0.2m is assumed
+             fb = 1._r8 - max(min(snowdp(c),0.2_r8),0._r8)/0.2_r8   ! 0.2m is assumed
                   !depth of snow required for complete burial of grasses
           endif
 
-          ! area weight by snow covered fraction
-          elai(p) = max(tlai(p)*(1.0_r8 - frac_sno(c)) &
-               +tlai(p)*fb*frac_sno(c), 0.0_r8)
-          esai(p) = max(tsai(p)*(1.0_r8 - frac_sno(c)) &
-               +tsai(p)*fb*frac_sno(c), 0.0_r8)
+          elai(p) = max(tlai(p)*fb, 0.0_r8)
+          esai(p) = max(tsai(p)*fb, 0.0_r8)
           if (elai(p) < 0.05_r8) elai(p) = 0._r8
           if (esai(p) < 0.05_r8) esai(p) = 0._r8
 
@@ -239,8 +231,6 @@ contains
     end if  !end of if-doalb block
 
   end subroutine EcosystemDyn
-
-
 
 !-----------------------------------------------------------------------
 !BOP
@@ -392,8 +382,8 @@ contains
        !! as determined in subroutine surfrd
 
        do p = begp,endp
-          g =pft%gridcell(p)
-          ivt =pft%itype(p)
+          g = pft%gridcell(p)
+          ivt = pft%itype(p)
           if (ivt /= noveg) then     !! vegetated pft
              do l = 0, numpft
                 if (l == ivt) then
@@ -519,8 +509,8 @@ contains
        ! as determined in subroutine surfrd
 
        do p = begp,endp
-          g =pft%gridcell(p)
-          ivt =pft%itype(p)
+          g = pft%gridcell(p)
+          ivt = pft%itype(p)
           if (ivt /= noveg) then     ! vegetated pft
              do l = 0, numpft
                 if (l == ivt) then

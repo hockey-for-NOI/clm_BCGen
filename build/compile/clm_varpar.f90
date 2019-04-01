@@ -21,29 +21,13 @@ module clm_varpar
 ! Module Parameters
 ! -------------------------------------------------------
 
-  logical, public :: more_vertlayers = .false. ! true => run with more vertical soil layers
-
-
 ! Note - model resolution is read in from the surface dataset
 
-  integer, parameter :: nlev_equalspace   = 15
-  integer, parameter :: toplev_equalspace =  6
-  integer            :: nlevsoi               ! number of hydrologically active soil layers
-  integer            :: nlevsoifl             ! number of soil layers on input file
-  integer            :: nlevgrnd              ! number of ground layers 
-                                              ! (includes lower layers that are hydrologically inactive)
-  integer            :: nlevurb               ! number of urban layers
-
-
+  integer, parameter :: nlevsoi     =  10     ! number of hydrologically active soil layers
+  integer, parameter :: nlevgrnd    =  15     ! number of ground layers (includes lower layers that are hydrologically inactive)
+  integer, parameter :: nlevurb     = nlevgrnd! number of urban layers (must equal nlevgrnd right now)
   integer, parameter :: nlevlak     =  10     ! number of lake layers
-
-
-
-
   integer, parameter :: nlevsno     =   5     ! maximum number of snow layers
-  ! For CH4 code
-  integer, parameter :: ngases = 3 ! CH4, O2, & CO2
-  integer, parameter :: nlevcan     =   1     ! number of leaf layers in canopy
   integer, parameter :: numwat      =   5     ! number of water types (soil, ice, 2 lakes, wetland)
   integer, parameter :: numrad      =   2     ! number of solar radiation bands: vis, nir
   integer, parameter :: ivis        =   1     ! index for visible band
@@ -52,28 +36,20 @@ module clm_varpar
   integer, parameter :: ndst        =   4     ! number of dust size classes (BGC only)
   integer, parameter :: dst_src_nbr =   3     ! number of size distns in src soil (BGC only)
   integer, parameter :: sz_nbr      = 200     ! number of sub-grid bins in large bin of dust size distribution (BGC only)
-  integer, parameter :: mxpft       =  24     ! maximum number of PFT's for any mode; might we set some of these automatically from reading pft-physiology?
+  integer, parameter :: mxpft       =  20     ! maximum number of PFT's for any mode
   integer, parameter :: numveg      =  16     ! number of veg types (without specific crop)
+
+
+
+
   integer, parameter :: numpft      = numveg  ! actual # of pfts (without bare)
   integer, parameter :: numcft      =   2     ! actual # of crops
-  integer, parameter :: maxpatch_pft= numpft+1 ! max number of plant functional types in naturally vegetated landunit
-  integer, parameter :: numurbl     = 3       ! number of urban landunits
 
-  integer            :: nlevdecomp                    ! number of biogeochemically active soil layers
-  integer            :: nlevdecomp_full               ! number of biogeochemical layers (includes lower layers that are biogeochemically inactive)
+  integer, parameter :: maxpatch_pft= numpft+1 ! max number of plant functional types in naturally vegetated landunit
 
 ! -------------------------------------------------------
 ! Module Varaibles (initialized in clm_varpar_init)
 ! -------------------------------------------------------
-
-  ! parameters for decomposition cascade
-  integer, parameter :: ndecomp_pools = 8
-  integer, parameter :: ndecomp_cascade_transitions = 9
-  integer, parameter :: i_met_lit = 1
-  integer, parameter :: i_cel_lit = 2
-  integer, parameter :: i_lig_lit = 3
-  integer, parameter :: i_cwd = 4
-  integer, parameter :: nsompools = 4
 
 ! Indices used in surface file read and set in clm_varpar_init
 
@@ -88,11 +64,6 @@ module clm_varpar
   integer :: max_pft_per_gcell 
   integer :: max_pft_per_lu 
   integer :: max_pft_per_col
-  integer :: npatch_urban_tbd
-  integer :: npatch_urban_hd
-  integer :: npatch_urban_md
-
-  real(r8) :: mach_eps            ! machine epsilon
 
 ! !PUBLIC MEMBER FUNCTIONS:
   public clm_varpar_init          ! set parameters
@@ -129,34 +100,19 @@ contains
 !------------------------------------------------------------------------------
 
   maxpatch_urb   = 5
-  npatch_urban_tbd = maxpatch_pft + 1
-  npatch_urban_hd  = npatch_urban_tbd + maxpatch_urb
-  npatch_urban_md  = npatch_urban_hd + maxpatch_urb
-  npatch_lake      = npatch_urban_md + maxpatch_urb
+  npatch_urban   = maxpatch_pft + 1
+  npatch_lake    = npatch_urban + maxpatch_urb
   npatch_wet     = npatch_lake  + 1
   npatch_glacier = npatch_wet   + 1
   npatch_glacier_mec = npatch_glacier + maxpatch_glcmec
   maxpatch       = npatch_glacier_mec
-  mach_eps       = epsilon(1.0_r8)
 
-  max_pft_per_gcell = numpft+1 + 3 + maxpatch_urb*numurbl + maxpatch_glcmec
+  max_pft_per_gcell = numpft+1 + 3 + maxpatch_urb + maxpatch_glcmec
+
+
+
   max_pft_per_lu    = max(numpft+1, numcft, maxpatch_urb)
   max_pft_per_col   = max(numpft+1, numcft, maxpatch_urb)
-
-  nlevsoifl   =  10
-  nlevurb     =  5
-  if ( .not. more_vertlayers )then
-     nlevsoi     =  nlevsoifl
-     nlevgrnd    =  15
-  else
-     nlevsoi     =  8  + nlev_equalspace
-     nlevgrnd    =  15 + nlev_equalspace
-  end if
-
-  ! here is a switch to set the number of soil levels for the biogeochemistry calculations.
-  ! currently it works on either a single level or on nlevsoi and nlevgrnd levels
-  nlevdecomp      = 1
-  nlevdecomp_full = 1
 
   end subroutine clm_varpar_init
 

@@ -47,10 +47,10 @@ contains
     use clm_varpar         , only : nlevgrnd
     use clm_varcon         , only : cpair, vkc, grav, denice, denh2o, istsoil
     use clm_varcon         , only : istcrop
+    use clm_varctl         , only : use_c13
     use shr_const_mod      , only : SHR_CONST_RGAS
     use FrictionVelocityMod, only : FrictionVelocity, MoninObukIni
     use QSatMod            , only : QSat
-    use clm_varctl         , only : use_c13, use_c14
 
 !
 ! !ARGUMENTS:
@@ -79,18 +79,6 @@ contains
 !
 ! local pointers to implicit in arguments
 !
-    real(r8), pointer :: t_soisno(:,:)     ! soil temperature (Kelvin)
-    integer , pointer :: snl(:)            ! number of snow layers
-    real(r8), pointer :: t_h2osfc(:) 	   ! surface water temperature
-    real(r8), pointer :: eflx_sh_snow(:)   ! sensible heat flux from snow (W/m**2) [+ to atm]
-    real(r8), pointer :: eflx_sh_soil(:)   ! sensible heat flux from soil (W/m**2) [+ to atm]
-    real(r8), pointer :: eflx_sh_h2osfc(:) ! sensible heat flux from soil (W/m**2) [+ to atm]
-    real(r8), pointer :: qg_snow(:)        ! specific humidity at snow surface [kg/kg]
-    real(r8), pointer :: qg_soil(:)        ! specific humidity at soil surface [kg/kg]
-    real(r8), pointer :: qg_h2osfc(:)      ! specific humidity at h2osfc surface [kg/kg]
-    real(r8), pointer :: qflx_ev_snow(:)   ! evaporation flux from snow (W/m**2) [+ to atm]
-    real(r8), pointer :: qflx_ev_soil(:)   ! evaporation flux from soil (W/m**2) [+ to atm]
-    real(r8), pointer :: qflx_ev_h2osfc(:) ! evaporation flux from h2osfc (W/m**2) [+ to atm]
     integer , pointer :: pcolumn(:)        ! pft's column index
     integer , pointer :: pgridcell(:)      ! pft's gridcell index
     integer , pointer :: plandunit(:)      ! pft's landunit index
@@ -113,13 +101,7 @@ contains
     real(r8), pointer :: forc_pbot(:)      ! atmospheric pressure (Pa)
     real(r8), pointer :: forc_hgt_u_pft(:) ! observational height of wind at pft level [m]
     real(r8), pointer :: psnsun(:)         ! sunlit leaf photosynthesis (umol CO2 /m**2/ s)
-    real(r8), pointer :: psnsun_wc(:)      ! Rubsico-limited sunlit leaf photosynthesis (umol CO2 /m**2/ s)
-    real(r8), pointer :: psnsun_wj(:)      ! RuBP-limited sunlit leaf photosynthesis (umol CO2 /m**2/ s)
-    real(r8), pointer :: psnsun_wp(:)      ! product-limited sunlit leaf photosynthesis (umol CO2 /m**2/ s)
     real(r8), pointer :: psnsha(:)         ! shaded leaf photosynthesis (umol CO2 /m**2/ s)
-    real(r8), pointer :: psnsha_wc(:)      ! Rubsico-limited shaded leaf photosynthesis (umol CO2 /m**2/ s)
-    real(r8), pointer :: psnsha_wj(:)      ! RuBP-limited shaded leaf photosynthesis (umol CO2 /m**2/ s)
-    real(r8), pointer :: psnsha_wp(:)      ! product-limited shaded leaf photosynthesis (umol CO2 /m**2/ s)
     real(r8), pointer :: z0mg_col(:)       ! roughness length, momentum [m]
     real(r8), pointer :: h2osoi_ice(:,:)   ! ice lens (kg/m2)
     real(r8), pointer :: h2osoi_liq(:,:)   ! liquid water (kg/m2)
@@ -157,14 +139,8 @@ contains
     real(r8), pointer :: rssha(:)         ! shaded stomatal resistance (s/m)
     real(r8), pointer :: ram1(:)          ! aerodynamical resistance (s/m)
     real(r8), pointer :: fpsn(:)          ! photosynthesis (umol CO2 /m**2 /s)
-    real(r8), pointer :: fpsn_wc(:)       ! Rubisco-limited photosynthesis (umol CO2 /m**2 /s)
-    real(r8), pointer :: fpsn_wj(:)       ! RuBP-limited photosynthesis (umol CO2 /m**2 /s)
-    real(r8), pointer :: fpsn_wp(:)       ! product-limited photosynthesis (umol CO2 /m**2 /s)
     real(r8), pointer :: rootr(:,:)       ! effective fraction of roots in each soil layer
     real(r8), pointer :: rresis(:,:)      ! root resistance by layer (0-1)  (nlevgrnd)	
-
-
-
 !
 !
 ! !OTHER LOCAL VARIABLES:
@@ -211,19 +187,6 @@ contains
     real(r8) :: www                    ! surface soil wetness [-]
 !------------------------------------------------------------------------------
 
-    t_soisno       => ces%t_soisno
-    snl            => cps%snl
-    t_h2osfc       => ces%t_h2osfc
-    eflx_sh_snow   => pef%eflx_sh_snow
-    eflx_sh_soil   => pef%eflx_sh_soil
-    eflx_sh_h2osfc => pef%eflx_sh_h2osfc
-    qg_snow        => cws%qg_snow 
-    qg_soil        => cws%qg_soil
-    qg_h2osfc      => cws%qg_h2osfc
-    qflx_ev_snow   => pwf%qflx_ev_snow
-    qflx_ev_soil   => pwf%qflx_ev_soil
-    qflx_ev_h2osfc => pwf%qflx_ev_h2osfc
-
     ! Assign local pointers to derived type members (gridcell-level)
 
     forc_u     => clm_a2l%forc_u
@@ -240,8 +203,8 @@ contains
     forc_pbot  => cps%forc_pbot
     forc_rho   => cps%forc_rho
     forc_q     => cws%forc_q
-    pcolumn    =>pft%column
-    pgridcell  =>pft%gridcell
+    pcolumn    => pft%column
+    pgridcell  => pft%gridcell
     frac_veg_nosno => pps%frac_veg_nosno
     dlrad  => pef%dlrad
     ulrad  => pef%ulrad
@@ -278,7 +241,7 @@ contains
     q_ref2m => pes%q_ref2m
     t_ref2m_r => pes%t_ref2m_r
     rh_ref2m_r => pes%rh_ref2m_r
-    plandunit =>pft%landunit
+    plandunit => pft%landunit
     rh_ref2m => pes%rh_ref2m
     t_veg => pes%t_veg
     thm => pes%thm
@@ -288,21 +251,9 @@ contains
     rootr => pps%rootr
     rresis => pps%rresis
     psnsun => pcf%psnsun
-    psnsun_wc => pcf%psnsun_wc
-    psnsun_wj => pcf%psnsun_wj
-    psnsun_wp => pcf%psnsun_wp
     psnsha => pcf%psnsha
-    psnsha_wc => pcf%psnsha_wc
-    psnsha_wj => pcf%psnsha_wj
-    psnsha_wp => pcf%psnsha_wp
     fpsn => pcf%fpsn
-    fpsn_wc => pcf%fpsn_wc
-    fpsn_wj => pcf%fpsn_wj
-    fpsn_wp => pcf%fpsn_wp
     forc_hgt_u_pft => pps%forc_hgt_u_pft
-
-
-
 
     ! Filter pfts where frac_veg_nosno is zero
 
@@ -404,9 +355,6 @@ contains
        raw     = 1._r8/(temp2(p)*ustar(p))
        raih    = forc_rho(c)*cpair/rah
 
-
-
-
        ! Soil evaporation resistance
        www     = (h2osoi_liq(c,1)/denh2o+h2osoi_ice(c,1)/denice)/dz(c,1)/watsat(c,1)
        www     = min(max(www,0.0_r8),1._r8)
@@ -435,16 +383,8 @@ contains
        tauy(p)          = -forc_rho(c)*forc_v(g)/ram
        eflx_sh_grnd(p)  = -raih*dth(p)
        eflx_sh_tot(p)   = eflx_sh_grnd(p)
-       ! compute sensible heat fluxes individually
-       eflx_sh_snow(p)  = -raih*(thm(p)-t_soisno(c,snl(c)+1))
-       eflx_sh_soil(p)  = -raih*(thm(p)-t_soisno(c,1))
-       eflx_sh_h2osfc(p)  = -raih*(thm(p)-t_h2osfc(c))
        qflx_evap_soi(p) = -raiw*dqh(p)
        qflx_evap_tot(p) = qflx_evap_soi(p)
-       ! compute latent heat fluxes individually
-       qflx_ev_snow(p) = -raiw*(forc_q(c) - qg_snow(c))
-       qflx_ev_soil(p) = -raiw*(forc_q(c) - qg_soil(c))
-       qflx_ev_h2osfc(p) = -raiw*(forc_q(c) - qg_h2osfc(c))
 
        ! 2 m height air temperature
 
@@ -476,39 +416,25 @@ contains
        ! Add the following to avoid NaN
 
        psnsun(p) = 0._r8
-       psnsun_wc(p) = 0._r8
-       psnsun_wj(p) = 0._r8
-       psnsun_wp(p) = 0._r8
        psnsha(p) = 0._r8
-       psnsha_wc(p) = 0._r8
-       psnsha_wj(p) = 0._r8
-       psnsha_wp(p) = 0._r8
        fpsn(p) = 0._r8
-       fpsn_wc(p) = 0._r8
-       fpsn_wj(p) = 0._r8
-       fpsn_wp(p) = 0._r8
+       pps%lncsun(p) = 0._r8
+       pps%lncsha(p) = 0._r8
+       pps%vcmxsun(p) = 0._r8
+       pps%vcmxsha(p) = 0._r8
        ! adding code for isotopes, 8/17/05, PET
-
-     if ( use_c13 ) then
-        pps%alphapsnsun(p) = 0._r8
-        pps%alphapsnsha(p) = 0._r8
-        pepv%rc13_canair(p) = 0._r8
-        pepv%rc13_psnsun(p) = 0._r8
-        pepv%rc13_psnsha(p) = 0._r8
-        pc13f%psnsun(p) = 0._r8
-        pc13f%psnsha(p) = 0._r8
-        pc13f%fpsn(p) = 0._r8
-     endif
-
-     if ( use_c14 ) then
-        pepv%rc14_atm(p) = 0._r8
-        ! pepv%rc14_canair(p) = 0._r8
-        ! pepv%rc14_psnsun(p) = 0._r8
-        ! pepv%rc14_psnsha(p) = 0._r8
-        pc14f%psnsun(p) = 0._r8
-        pc14f%psnsha(p) = 0._r8
-        pc14f%fpsn(p) = 0._r8
-     endif
+       pps%cisun(p) = 0._r8
+       pps%cisha(p) = 0._r8
+       if (use_c13) then
+          pps%alphapsnsun(p) = 0._r8
+          pps%alphapsnsha(p) = 0._r8
+          pepv%rc13_canair(p) = 0._r8
+          pepv%rc13_psnsun(p) = 0._r8
+          pepv%rc13_psnsha(p) = 0._r8
+          pc13f%psnsun(p) = 0._r8
+          pc13f%psnsha(p) = 0._r8
+          pc13f%fpsn(p) = 0._r8
+       end if
 
     end do
 

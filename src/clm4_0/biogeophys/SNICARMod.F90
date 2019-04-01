@@ -1342,7 +1342,7 @@ contains
 
   subroutine SnowOptics_init( )
     use fileutils       , only : getfil
-    use CLM_varctl      , only : fsnowoptics
+    use clm_varctl      , only : fsnowoptics
     use spmdMod         , only : masterproc
     use ncdio_pio       , only : file_desc_t, ncd_io, ncd_pio_openfile, ncd_pio_closefile
    
@@ -1450,7 +1450,7 @@ contains
   end subroutine SnowOptics_init
 
   subroutine SnowAge_init( )
-   use CLM_varctl      , only : fsnowaging
+   use clm_varctl      , only : fsnowaging
    use fileutils       , only : getfil
    use spmdMod         , only : masterproc
    use ncdio_pio       , only : file_desc_t, ncd_io, ncd_pio_openfile, ncd_pio_closefile

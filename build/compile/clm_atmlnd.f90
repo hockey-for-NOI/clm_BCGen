@@ -13,7 +13,7 @@ module clm_atmlnd
 ! !USES:
   use clm_varpar  , only : numrad, ndst, nlevgrnd !ndst = number of dust bins.
   use clm_varcon  , only : rair, grav, cpair, hfus, tfrz
-  use clm_varctl  , only : iulog, use_c13
+  use clm_varctl  , only : iulog, use_cn
   use decompMod   , only : get_proc_bounds
   use shr_kind_mod, only : r8 => shr_kind_r8
   use shr_infnan_mod, only : nan => shr_infnan_nan, assignment(=)
@@ -29,71 +29,67 @@ module clm_atmlnd
 !----------------------------------------------------
 ! atmosphere -> land variables structure
 !----------------------------------------------------
+
   type, public :: atm2lnd_type
-     real(r8), pointer :: forc_t(:)        => null() !atmospheric temperature (Kelvin)
-     real(r8), pointer :: forc_u(:)        => null() !atm wind speed, east direction (m/s)
-     real(r8), pointer :: forc_v(:)        => null() !atm wind speed, north direction (m/s)
-     real(r8), pointer :: forc_wind(:)     => null() !atmospheric wind speed   
-     real(r8), pointer :: forc_q(:)        => null() !atmospheric specific humidity (kg/kg)
-     real(r8), pointer :: forc_hgt(:)      => null() !atmospheric reference height (m)
-     real(r8), pointer :: forc_hgt_u(:)    => null() !obs height of wind [m] (new)
-     real(r8), pointer :: forc_hgt_t(:)    => null() !obs height of temperature [m] (new)
-     real(r8), pointer :: forc_hgt_q(:)    => null() !obs height of humidity [m] (new)
-     real(r8), pointer :: forc_pbot(:)     => null() !atmospheric pressure (Pa)
-     real(r8), pointer :: forc_th(:)       => null() !atm potential temperature (Kelvin)
-     real(r8), pointer :: forc_vp(:)       => null() !atmospheric vapor pressure (Pa) 
-     real(r8), pointer :: forc_rho(:)      => null() !density (kg/m**3)
-     real(r8), pointer :: forc_rh(:)       => null() !atmospheric relative humidity (%)
-     real(r8), pointer :: forc_psrf(:)     => null() !surface pressure (Pa)
-     real(r8), pointer :: forc_pco2(:)     => null() !CO2 partial pressure (Pa)
-     real(r8), pointer :: forc_lwrad(:)    => null() !downwrd IR longwave radiation (W/m**2)
-     real(r8), pointer :: forc_solad(:,:)  => null() !direct beam radiation (numrad) (vis=forc_sols , nir=forc_soll )
-     real(r8), pointer :: forc_solai(:,:)  => null() !diffuse radiation (numrad) (vis=forc_solsd, nir=forc_solld)
-     real(r8), pointer :: forc_solar(:)    => null() !incident solar radiation
-     real(r8), pointer :: forc_rain(:)     => null() !rain rate [mm/s]
-     real(r8), pointer :: forc_snow(:)     => null() !snow rate [mm/s]
-     real(r8), pointer :: forc_ndep(:)     => null() !nitrogen deposition rate (gN/m2/s)
-     real(r8), pointer :: rainf(:)         => null() !ALMA rain+snow [mm/s]
-     real(r8), pointer :: forc_pc13o2(:)   => null() !C13O2 partial pressure (Pa)
-     real(r8), pointer :: forc_po2(:)      => null() !O2 partial pressure (Pa)
-     real(r8), pointer :: forc_flood(:)    => null() ! rof flood (mm/s)
-     real(r8), pointer :: volr(:)    => null() ! rof volr (m3)
-     real(r8), pointer :: forc_aer(:,:)    => null() ! aerosol deposition array
-
-
-
+     real(r8), pointer :: forc_t(:)       => null() !atmospheric temperature (Kelvin)
+     real(r8), pointer :: forc_u(:)       => null() !atm wind speed, east direction (m/s)
+     real(r8), pointer :: forc_v(:)       => null() !atm wind speed, north direction (m/s)
+     real(r8), pointer :: forc_wind(:)    => null() !atmospheric wind speed   
+     real(r8), pointer :: forc_q(:)       => null() !atmospheric specific humidity (kg/kg)
+     real(r8), pointer :: forc_hgt(:)     => null() !atmospheric reference height (m)
+     real(r8), pointer :: forc_hgt_u(:)   => null() !obs height of wind [m] (new)
+     real(r8), pointer :: forc_hgt_t(:)   => null() !obs height of temperature [m] (new)
+     real(r8), pointer :: forc_hgt_q(:)   => null() !obs height of humidity [m] (new)
+     real(r8), pointer :: forc_pbot(:)    => null() !atmospheric pressure (Pa)
+     real(r8), pointer :: forc_th(:)      => null() !atm potential temperature (Kelvin)
+     real(r8), pointer :: forc_vp(:)      => null() !atmospheric vapor pressure (Pa) 
+     real(r8), pointer :: forc_rho(:)     => null() !density (kg/m**3)
+     real(r8), pointer :: forc_rh(:)      => null() !atmospheric relative humidity (%)
+     real(r8), pointer :: forc_psrf(:)    => null() !surface pressure (Pa)
+     real(r8), pointer :: forc_pco2(:)    => null() !CO2 partial pressure (Pa)
+     real(r8), pointer :: forc_lwrad(:)   => null() !downward IR longwave radiation (W/m**2)
+     real(r8), pointer :: forc_solad(:,:) => null() !direct beam radiation (numrad) (vis=forc_sols , nir=forc_soll )
+     real(r8), pointer :: forc_solai(:,:) => null() !diffuse radiation (numrad) (vis=forc_solsd, nir=forc_solld)
+     real(r8), pointer :: forc_solar(:)   => null() !incident solar radiation
+     real(r8), pointer :: forc_rain(:)    => null() !rain rate [mm/s]
+     real(r8), pointer :: forc_snow(:)    => null() !snow rate [mm/s]
+     real(r8), pointer :: forc_ndep(:)    => null() !nitrogen deposition rate (gN/m2/s)
+     real(r8), pointer :: rainf(:)        => null() !ALMA rain+snow [mm/s]
+     real(r8), pointer :: forc_pc13o2(:)  => null() !C13O2 partial pressure (Pa)
+     real(r8), pointer :: forc_po2(:)     => null() !O2 partial pressure (Pa)
+     real(r8), pointer :: forc_flood(:)   => null() ! rof flood (mm/s)
+     real(r8), pointer :: volr(:)         => null() ! rof volr (m3)
+     real(r8), pointer :: forc_aer(:,:)   => null() ! aerosol deposition array
   end type atm2lnd_type
 
 !----------------------------------------------------
 ! land -> atmosphere variables structure
 !----------------------------------------------------
+
   type, public :: lnd2atm_type
-     real(r8), pointer :: t_rad(:)         => null() !radiative temperature (Kelvin)
-     real(r8), pointer :: t_ref2m(:)       => null() !2m surface air temperature (Kelvin)
-     real(r8), pointer :: q_ref2m(:)       => null() !2m surface specific humidity (kg/kg)
-     real(r8), pointer :: u_ref10m(:)      => null() !10m surface wind speed (m/sec)
-     real(r8), pointer :: h2osno(:)        => null() !snow water (mm H2O)
-     real(r8), pointer :: albd(:,:)        => null() !(numrad) surface albedo (direct)
-     real(r8), pointer :: albi(:,:)        => null() !(numrad) surface albedo (diffuse)
-     real(r8), pointer :: taux(:)          => null() !wind stress: e-w (kg/m/s**2)
-     real(r8), pointer :: tauy(:)          => null() !wind stress: n-s (kg/m/s**2)
-     real(r8), pointer :: eflx_lh_tot(:)   => null() !total latent HF (W/m**2)  [+ to atm]
-     real(r8), pointer :: eflx_sh_tot(:)   => null() !total sensible HF (W/m**2) [+ to atm]
-     real(r8), pointer :: eflx_lwrad_out(:)  => null() !IR (longwave) radiation (W/m**2)
-     real(r8), pointer :: qflx_evap_tot(:) => null() !qflx_evap_soi + qflx_evap_can + qflx_tran_veg
-     real(r8), pointer :: fsa(:)           => null() !solar rad absorbed (total) (W/m**2)
-     real(r8), pointer :: nee(:)           => null() !net CO2 flux (kg CO2/m**2/s) [+ to atm]
-     real(r8), pointer :: ram1(:)          => null() !aerodynamical resistance (s/m)
-     real(r8), pointer :: fv(:)            => null() !friction velocity (m/s) (for dust model)
-     real(r8), pointer :: h2osoi_vol(:,:)  => null() !volumetric soil water (0~watsat, m3/m3, nlevgrnd) (for dust model)
-     real(r8), pointer :: rofliq(:)        => null() ! rof liq forcing
-     real(r8), pointer :: rofice(:)        => null() ! rof ice forcing
-     real(r8), pointer :: flxdst(:,:)      => null() !dust flux (size bins)
-     real(r8), pointer :: ddvel(:,:)       => null() !dry deposition velocities
-     real(r8), pointer :: flxvoc(:,:)      => null() ! VOC flux (size bins)
-
-
-
+     real(r8), pointer :: t_rad(:)        => null() !radiative temperature (Kelvin)
+     real(r8), pointer :: t_ref2m(:)      => null() !2m surface air temperature (Kelvin)
+     real(r8), pointer :: q_ref2m(:)      => null() !2m surface specific humidity (kg/kg)
+     real(r8), pointer :: u_ref10m(:)     => null() !10m surface wind speed (m/sec)
+     real(r8), pointer :: h2osno(:)       => null() !snow water (mm H2O)
+     real(r8), pointer :: albd(:,:)       => null() !(numrad) surface albedo (direct)
+     real(r8), pointer :: albi(:,:)       => null() !(numrad) surface albedo (diffuse)
+     real(r8), pointer :: taux(:)         => null() !wind stress: e-w (kg/m/s**2)
+     real(r8), pointer :: tauy(:)         => null() !wind stress: n-s (kg/m/s**2)
+     real(r8), pointer :: eflx_lh_tot(:)  => null() !total latent HF (W/m**2)  [+ to atm]
+     real(r8), pointer :: eflx_sh_tot(:)  => null() !total sensible HF (W/m**2) [+ to atm]
+     real(r8), pointer :: eflx_lwrad_out(:) => null() !IR (longwave) radiation (W/m**2)
+     real(r8), pointer :: qflx_evap_tot(:)  => null() !qflx_evap_soi + qflx_evap_can + qflx_tran_veg
+     real(r8), pointer :: fsa(:)          => null() !solar rad absorbed (total) (W/m**2)
+     real(r8), pointer :: nee(:)          => null() !net CO2 flux (kg CO2/m**2/s) [+ to atm]
+     real(r8), pointer :: ram1(:)         => null() !aerodynamical resistance (s/m)
+     real(r8), pointer :: fv(:)           => null() !friction velocity (m/s) (for dust model)
+     real(r8), pointer :: h2osoi_vol(:,:) => null() !volumetric soil water (0~watsat, m3/m3, nlevgrnd) (for dust model)
+     real(r8), pointer :: rofliq(:)       => null() ! rof liq forcing
+     real(r8), pointer :: rofice(:)       => null() ! rof ice forcing
+     real(r8), pointer :: flxdst(:,:)     => null() !dust flux (size bins)
+     real(r8), pointer :: ddvel(:,:)      => null() !dry deposition velocities
+     real(r8), pointer :: flxvoc(:,:)     => null() ! VOC flux (size bins)
   end type lnd2atm_type
   
   type(atm2lnd_type),public,target :: clm_a2l      ! a2l fields on clm grid
@@ -164,16 +160,11 @@ contains
   allocate(a2l%forc_snow(beg:end))
   allocate(a2l%forc_ndep(beg:end))
   allocate(a2l%rainf(beg:end))
-  if ( use_c13 ) then
-     allocate(a2l%forc_pc13o2(beg:end))
-  endif
+  allocate(a2l%forc_pc13o2(beg:end))
   allocate(a2l%forc_po2(beg:end))
   allocate(a2l%forc_flood(beg:end))
   allocate(a2l%volr(beg:end))
   allocate(a2l%forc_aer(beg:end,14))
-
-
-
 
   ! ival = nan      ! causes core dump in map_maparray, tcx fix
   ival = 0.0_r8
@@ -202,16 +193,11 @@ contains
   a2l%forc_snow(beg:end) = ival
   a2l%forc_ndep(beg:end) = ival
   a2l%rainf(beg:end) = nan
-  if ( use_c13 ) then
-     a2l%forc_pc13o2(beg:end) = ival
-  endif
+  a2l%forc_pc13o2(beg:end) = ival
   a2l%forc_po2(beg:end) = ival
   a2l%forc_flood(beg:end) = ival
   a2l%volr(beg:end) = ival
   a2l%forc_aer(beg:end,:) = ival
-
-
-
 
 end subroutine init_atm2lnd_type
 
@@ -262,9 +248,6 @@ end subroutine init_atm2lnd_type
   allocate(l2a%rofliq(beg:end))
   allocate(l2a%rofice(beg:end))
   allocate(l2a%flxdst(beg:end,1:ndst))
-
-
-
   if (shr_megan_mechcomps_n>0) then
      allocate(l2a%flxvoc(beg:end,1:shr_megan_mechcomps_n))
   endif
@@ -299,9 +282,6 @@ end subroutine init_atm2lnd_type
   if (shr_megan_mechcomps_n>0) then
      l2a%flxvoc(beg:end,1:shr_megan_mechcomps_n) = ival
   endif
-
-
-
   if ( n_drydep > 0 .and. drydep_method == DD_XLND )then
      l2a%ddvel(beg:end, : ) = ival
   end if
@@ -325,9 +305,6 @@ subroutine clm_map2gcell(init)
   use subgridAveMod
   use clm_varcon  , only : sb
   use clm_varpar  , only : numrad
-
-
-
 !
 ! !ARGUMENTS:
   implicit none
@@ -354,6 +331,10 @@ subroutine clm_map2gcell(init)
 ! !LOCAL VARIABLES:
 !EOP
   integer :: g                           ! indices
+  type(gridcell_type), pointer :: gptr   ! pointer to gridcell derived subtype
+  type(landunit_type), pointer :: lptr   ! pointer to landunit derived subtype
+  type(column_type)  , pointer :: cptr   ! pointer to column derived subtype
+  type(pft_type)     , pointer :: pptr   ! pointer to pft derived subtype
   integer             :: n               ! Loop index over nmap
   real(r8), parameter :: amC   = 12.0_r8 ! Atomic mass number for Carbon
   real(r8), parameter :: amO   = 16.0_r8 ! Atomic mass number for Oxygen
@@ -365,6 +346,10 @@ subroutine clm_map2gcell(init)
 
   ! Set pointers into derived type
 
+  gptr => grc
+  lptr => lun
+  cptr => col
+  pptr => pft
 
   ! Determine processor bounds
 
@@ -440,6 +425,11 @@ subroutine clm_map2gcell(init)
           pef%eflx_lh_tot, clm_l2a%eflx_lh_tot, &
           p2c_scale_type='unity', c2l_scale_type= 'urbanf', l2g_scale_type='unity')
 
+!DML note: use new array: gef%eflx_sh_totg
+!     call p2g(begp, endp, begc, endc, begl, endl, begg, endg, &
+!          pef%eflx_sh_tot, clm_l2a%eflx_sh_tot, &
+!          p2c_scale_type='unity', c2l_scale_type= 'urbanf', l2g_scale_type='unity')
+
      do g = begg,endg
         clm_l2a%eflx_sh_tot(g) = gef%eflx_sh_totg(g)
      end do
@@ -456,21 +446,19 @@ subroutine clm_map2gcell(init)
           pef%eflx_lwrad_out, clm_l2a%eflx_lwrad_out, &
           p2c_scale_type='unity', c2l_scale_type= 'urbanf', l2g_scale_type='unity')
                   
-
-
-
-
-
-     call p2g(begp, endp, begc, endc, begl, endl, begg, endg, &
-          pcf%fco2, clm_l2a%nee, &
-          p2c_scale_type='unity', c2l_scale_type= 'unity', l2g_scale_type='unity')
-     ! Note that fco2 in is umolC/m2/sec so units need to be changed to gC/m2/sec
-     do g = begg,endg
-        clm_l2a%nee(g) = clm_l2a%nee(g)*12.011e-6_r8
-     end do
-
-
-! defined CH4
+     if (use_cn) then
+        call c2g(begc, endc, begl, endl, begg, endg, &
+             ccf%nee, clm_l2a%nee, &
+             c2l_scale_type= 'unity', l2g_scale_type='unity')
+     else
+        call p2g(begp, endp, begc, endc, begl, endl, begg, endg, &
+             pcf%fco2, clm_l2a%nee, &
+             p2c_scale_type='unity', c2l_scale_type= 'unity', l2g_scale_type='unity')
+        ! Note that fco2 in is umolC/m2/sec so units need to be changed to gC/m2/sec
+        do g = begg,endg
+           clm_l2a%nee(g) = clm_l2a%nee(g)*12.011e-6_r8
+        end do
+     end if
 
      call p2g(begp, endp, begc, endc, begl, endl, begg, endg, &
           pps%fv, clm_l2a%fv, &

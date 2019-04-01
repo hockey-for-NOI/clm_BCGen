@@ -130,9 +130,9 @@ contains
    ! Assign local pointers to derived type members (gridcell-level)
 
    if (present(landunit_index)) then
-     ngridcell  =>lun%gridcell
+     ngridcell  => lun%gridcell
    else
-     ngridcell  =>pft%gridcell
+     ngridcell  => pft%gridcell
    end if
 
    vds        => pps%vds
@@ -143,8 +143,8 @@ contains
 
    ! Assign local pointers to derived type members (pft or landunit-level)
 
-   pfti             =>lun%pfti
-   pftf             =>lun%pftf
+   pfti             => lun%pfti
+   pftf             => lun%pftf
 
    ! Assign local pointers to derived type members (pft-level)
 
@@ -153,8 +153,6 @@ contains
    forc_hgt_q_pft => pps%forc_hgt_q_pft
 
    ! Adjustment factors for unstable (moz < 0) or stable (moz > 0) conditions.
-
-
 
    do f = 1, fn
       n = filtern(f)
@@ -425,9 +423,6 @@ contains
       end if
 
    end do
-
-
-
 
    end subroutine FrictionVelocity
 

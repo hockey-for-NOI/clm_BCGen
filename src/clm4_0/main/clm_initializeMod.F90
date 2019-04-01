@@ -274,10 +274,10 @@ contains
     use ndepStreamMod    , only : ndep_init, ndep_interp
     use CNEcosystemDynMod, only : CNEcosystemDynInit
     use pftdynMod             , only : pftwt_init
-    use CNDVEcosystemDyniniMod, only : CNDVEcosystemDynini
+    use CNDVEcosystemDynIniMod, only : CNDVEcosystemDynini
     use STATICEcosysDynMod , only : EcosystemDynini, readAnnualVegetation
     use STATICEcosysDynMod , only : interpMonthlyVeg
-    use DustMod         , only : Dustini
+    use DUSTMod         , only : Dustini
     use clm_time_manager, only : get_curr_date, get_nstep, advance_timestep, &
                                  timemgr_init, timemgr_restart_io, timemgr_restart
     use clm_time_manager, only : get_step_size, get_curr_calday

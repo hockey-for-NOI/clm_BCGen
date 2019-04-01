@@ -171,6 +171,8 @@ contains
 
     call spmd_init( mpicom_lnd, LNDID )
 
+    inst_name = 'LND'
+
 #if (defined _MEMTRACE)
     if(masterproc) then
        lbnum=1

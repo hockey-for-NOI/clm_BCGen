@@ -14,8 +14,8 @@ module pftvarcon
 ! !USES:
   use shr_kind_mod, only : r8 => shr_kind_r8
   use abortutils  , only : endrun
-  use clm_varpar  , only : mxpft, numrad, ivis, inir
-  use clm_varctl  , only : iulog
+  use clm_varpar  , only : mxpft, numpft, numrad, ivis, inir
+  use clm_varctl  , only : iulog, use_cn, use_cndv
 !
 ! !PUBLIC TYPES:
   implicit none
@@ -42,20 +42,18 @@ module pftvarcon
   integer :: nc3_nonarctic_grass    !value for C3 non-arctic grass
   integer :: nc4_grass              !value for C4 grass
   integer :: npcropmin              !value for first crop
-  integer :: ncorn                  !value for corn, rain fed (rf)
-  integer :: ncornirrig             !value for corn, irrigated (ir)
-  integer :: nscereal               !value for spring temperate cereal (rf)
-  integer :: nscerealirrig          !value for spring temperate cereal (ir)
-  integer :: nwcereal               !value for winter temperate cereal (rf)
-  integer :: nwcerealirrig          !value for winter temperate cereal (ir)
-  integer :: nsoybean               !value for soybean (rf)
-  integer :: nsoybeanirrig          !value for soybean (ir)
+  integer :: ncorn                  !value for corn
+  integer :: nscereal               !value for spring temperate cereal
+  integer :: nwcereal               !value for winter temperate cereal
+  integer :: nsoybean               !value for soybean
   integer :: npcropmax              !value for last prognostic crop in list
-  integer :: nc3crop                !value for generic crop (rf)
-  integer :: nc3irrig               !value for irrigated generic crop (ir)
+  integer :: nc3crop                !value for generic crop
+  integer :: nirrig                 !value for irrigated generic crop
 
   real(r8):: dleaf(0:mxpft)       !characteristic leaf dimension (m)
   real(r8):: c3psn(0:mxpft)       !photosynthetic pathway: 0. = c4, 1. = c3
+  real(r8):: mp(0:mxpft)          !slope of conductance-to-photosynthesis relationship
+  real(r8):: qe25(0:mxpft)        !quantum efficiency at 25C (umol CO2 / umol photon)
   real(r8):: xl(0:mxpft)          !leaf/stem orientation index
   real(r8):: rhol(0:mxpft,numrad) !leaf reflectance: 1=vis, 2=nir
   real(r8):: rhos(0:mxpft,numrad) !stem reflectance: 1=vis, 2=nir
@@ -82,7 +80,6 @@ module pftvarcon
   real(r8):: deadwdcn(0:mxpft)     !dead wood (xylem and heartwood) C:N (gC/gN)
   real(r8):: grperc(0:mxpft)       !growth respiration parameter
   real(r8):: grpnow(0:mxpft)       !growth respiration parameter
-  real(r8):: rootprof_beta(0:mxpft)   !CLM rooting distribution parameter for C and N inputs [unitless]
 
 ! for crop
   real(r8):: graincn(0:mxpft)      !grain C:N (gC/gN)
@@ -130,25 +127,9 @@ module pftvarcon
   real(r8):: pprod10(0:mxpft)      !proportion of deadstem to 10-yr product pool
   real(r8):: pprod100(0:mxpft)     !proportion of deadstem to 100-yr product pool
   real(r8):: pprodharv10(0:mxpft)  !harvest mortality proportion of deadstem to 10-yr pool
-  ! pft paraemeters for fire code
-  real(r8):: cc_leaf(0:mxpft)
-  real(r8):: cc_lstem(0:mxpft)
-  real(r8):: cc_dstem(0:mxpft)
-  real(r8):: cc_other(0:mxpft)
-  real(r8):: fm_leaf(0:mxpft)
-  real(r8):: fm_lstem(0:mxpft)
-  real(r8):: fm_dstem(0:mxpft)
-  real(r8):: fm_other(0:mxpft)
-  real(r8):: fm_root(0:mxpft)
-  real(r8):: fm_lroot(0:mxpft)
-  real(r8):: fm_droot(0:mxpft)
-  real(r8):: fsr_pft(0:mxpft)
-  real(r8):: fd_pft(0:mxpft)
-  ! pft parameters for crop code
-  real(r8):: fertnitro(0:mxpft)    !fertilizer
-  real(r8):: fleafcn(0:mxpft)      !C:N during grain fill; leaf
-  real(r8):: ffrootcn(0:mxpft)     !C:N during grain fill; fine root
-  real(r8):: fstemcn(0:mxpft)      !C:N during grain fill; stem
+
+  ! new pft parameters for CN-fire code
+  real(r8):: resist(0:mxpft)       !resistance to fire (no units)
 
   ! pft parameters for CNDV code
   ! from LPJ subroutine pftparameters
@@ -206,7 +187,7 @@ contains
 !
 ! !REVISION HISTORY:
 ! Created by Gordon Bonan
-!F. Li and S. Levis (11/06/12)
+!
 !
 ! !LOCAL VARIABLES:
 !EOP
@@ -244,13 +225,9 @@ contains
                , 'c3_crop                            '  &
                , 'c3_irrigated                       '  &
                , 'corn                               '  &
-               , 'irrigated_corn                     '  &
                , 'spring_temperate_cereal            '  &
-               , 'irrigated_spring_temperate_cereal  '  &
                , 'winter_temperate_cereal            '  &
-               , 'irrigated_winter_temperate_cereal  '  &
                , 'soybean                            '  &
-               , 'irrigated_soybean                  '  &
     /)
 !-----------------------------------------------------------------------
 
@@ -273,6 +250,10 @@ contains
     call ncd_io('dleaf',dleaf, 'read', ncid, readvar=readv, posNOTonfile=.true.)
     if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
     call ncd_io('c3psn',c3psn, 'read', ncid, readvar=readv, posNOTonfile=.true.)
+    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
+    call ncd_io('mp',mp, 'read', ncid, readvar=readv, posNOTonfile=.true.)
+    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
+    call ncd_io('qe25',qe25, 'read', ncid, readvar=readv, posNOTonfile=.true.)
     if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
     call ncd_io('rholvis',rhol(:,ivis), 'read', ncid, readvar=readv, posNOTonfile=.true.)
     if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
@@ -356,6 +337,8 @@ contains
     if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
     call ncd_io('season_decid',season_decid, 'read', ncid, readvar=readv, posNOTonfile=.true.)
     if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
+    call ncd_io('resist',resist, 'read', ncid, readvar=readv, posNOTonfile=.true.)
+    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
     call ncd_io('pftpar20',pftpar20, 'read', ncid, readvar=readv, posNOTonfile=.true.)
     if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
     call ncd_io('pftpar28',pftpar28, 'read', ncid, readvar=readv, posNOTonfile=.true.)
@@ -366,18 +349,6 @@ contains
     if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
     call ncd_io('pftpar31',pftpar31, 'read', ncid, readvar=readv, posNOTonfile=.true.)  
     if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('fertnitro',fertnitro, 'read', ncid, readvar=readv, posNOTonfile=.true.)
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('fleafcn',fleafcn, 'read', ncid, readvar=readv, posNOTonfile=.true.)
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('ffrootcn',ffrootcn, 'read', ncid, readvar=readv, posNOTonfile=.true.)
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('fstemcn',fstemcn, 'read', ncid, readvar=readv, posNOTonfile=.true.)
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-
-
-
-
     call ncd_io('pconv',pconv, 'read', ncid, readvar=readv)  
     if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
     call ncd_io('pprod10',pprod10, 'read', ncid, readvar=readv)  
@@ -428,32 +399,6 @@ contains
     if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
     call ncd_io('mxmat',mxmat, 'read', ncid, readvar=readv)  
     if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('cc_leaf', cc_leaf, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('cc_lstem',cc_lstem, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('cc_dstem',cc_dstem, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('cc_other',cc_other, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('fm_leaf', fm_leaf, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('fm_lstem',fm_lstem, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('fm_dstem',fm_dstem, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('fm_other',fm_other, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('fm_root', fm_root, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('fm_lroot',fm_lroot, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('fm_droot',fm_droot, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('fsr_pft', fsr_pft, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
-    call ncd_io('fd_pft',  fd_pft, 'read', ncid, readvar=readv)  
-    if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
     call ncd_io('planting_temp',planttemp, 'read', ncid, readvar=readv)  
     if ( .not. readv ) call endrun( trim(subname)//' ERROR: error in reading in pft data' )
     call ncd_io('min_planting_temp',minplanttemp, 'read', ncid, readvar=readv)  
@@ -490,24 +435,20 @@ contains
        if ( trim(pftname(i)) == 'c3_non-arctic_grass'                 ) nc3_nonarctic_grass  = i
        if ( trim(pftname(i)) == 'c4_grass'                            ) nc4_grass            = i
        if ( trim(pftname(i)) == 'c3_crop'                             ) nc3crop              = i
-       if ( trim(pftname(i)) == 'c3_irrigated'                        ) nc3irrig               = i
+       if ( trim(pftname(i)) == 'c3_irrigated'                        ) nirrig               = i
        if ( trim(pftname(i)) == 'corn'                                ) ncorn                = i
-       if ( trim(pftname(i)) == 'irrigated_corn'                      ) ncornirrig           = i
        if ( trim(pftname(i)) == 'spring_temperate_cereal'             ) nscereal             = i
-       if ( trim(pftname(i)) == 'irrigated_spring_temperate_cereal'   ) nscerealirrig        = i
        if ( trim(pftname(i)) == 'winter_temperate_cereal'             ) nwcereal             = i
-       if ( trim(pftname(i)) == 'irrigated_winter_temperate_cereal'   ) nwcerealirrig        = i
        if ( trim(pftname(i)) == 'soybean'                             ) nsoybean             = i
-       if ( trim(pftname(i)) == 'irrigated_soybean'                   ) nsoybeanirrig        = i
     end do
 
     ntree                = nbrdlf_dcd_brl_tree  ! value for last type of tree
     npcropmin            = ncorn                ! first prognostic crop
-    npcropmax            = nsoybeanirrig        ! last prognostic crop in list
+    npcropmax            = nsoybean             ! last prognostic crop in list
 
-
-
-
+    if (use_cndv) then
+       fcur(:) = fcurdv(:)
+    end if
 
     !
     ! Do some error checking
@@ -516,11 +457,7 @@ contains
        call endrun( trim(subname)//' ERROR: npcropmax is NOT the last value' )
     end if
     do i = 0, mxpft
-       if (      irrigated(i) == 1.0_r8  .and. (i == nc3irrig .or. &
-                                                i == ncornirrig .or. &
-                                                i == nscerealirrig .or. &
-                                                i == nwcerealirrig .or. &
-                                                i == nsoybeanirrig) )then
+       if (     (irrigated(i) == 1.0_r8) .and. i == nirrig )then
           ! correct
        else if ( irrigated(i) == 0.0_r8 )then
           ! correct

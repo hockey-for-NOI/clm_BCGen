@@ -14,7 +14,7 @@ module restFileMod
   use shr_kind_mod, only : r8 => shr_kind_r8
   use spmdMod     , only : masterproc
   use abortutils  , only : endrun
-  use clm_varctl  , only : iulog
+  use clm_varctl  , only : iulog, use_cn
   use surfrdMod   , only : crop_prog
   use ncdio_pio       
 !
@@ -64,15 +64,9 @@ contains
     use clm_time_manager , only : timemgr_restart_io, get_nstep
     use subgridRestMod   , only : SubgridRest
     use BiogeophysRestMod, only : BiogeophysRest
-
-
-
-
+    use CNrestMod        , only : CNRest
+    use CropRestMod      , only : CropRest
     use accumulMod       , only : accumulRest
-    use SLakeRestMod  , only : SLakeRest
-
-
-
     use histFileMod      , only : hist_restart_ncd
 !
 ! !ARGUMENTS:
@@ -122,15 +116,12 @@ contains
 
     call BiogeophysRest( ncid, flag='define' )
 
-
-
-
+    if (use_cn) then
+       call CNRest( ncid, flag='define' )
+       if ( crop_prog ) call CropRest( ncid, flag='define' )
+    end if
 
     call accumulRest( ncid, flag='define' )
-    call SLakeRest( ncid, flag='define' )
-
-
-
 
     call hist_restart_ncd ( ncid, flag='define', rdate=rdate )
 
@@ -146,14 +137,10 @@ contains
 
     call BiogeophysRest( ncid, flag='write' )
 
-
-
-
-
-
-    call SLakeRest( ncid, flag='write' )
-
-
+    if (use_cn) then
+       call CNRest( ncid, flag='write' )
+       if ( crop_prog ) call CropRest( ncid, flag='write' )
+    end if
 
     call accumulRest( ncid, flag='write' )
     
@@ -192,14 +179,8 @@ contains
 !
 ! !USES:
     use BiogeophysRestMod, only : BiogeophysRest
-
-
-
-
-    use SLakeRestMod  , only : SLakeRest
-
-
-
+    use CNrestMod        , only : CNRest
+    use CropRestMod      , only : CropRest
     use accumulMod       , only : accumulRest
     use histFileMod      , only : hist_restart_ncd
 !
@@ -228,18 +209,12 @@ contains
 
     call restFile_dimcheck( ncid )
 
-    call SLakeRest( ncid, flag='read' )
-
     call BiogeophysRest( ncid, flag='read' )
 
-
-
-
-
-
-
-
-
+    if (use_cn) then
+       call CNRest( ncid, flag='read' )
+       if ( crop_prog ) call CropRest( ncid, flag='read' )
+    end if
 
     call accumulRest( ncid, flag='read' )
     
@@ -574,7 +549,7 @@ contains
     use spmdMod     , only : mpicom, MPI_LOGICAL
     use clm_varctl  , only : caseid, ctitle, version, username, hostname, fsurdat, &
                              conventions, source
-    use clm_varpar  , only : numrad, nlevlak, nlevsno, nlevgrnd, nlevurb, nlevcan
+    use clm_varpar  , only : numrad, nlevlak, nlevsno, nlevgrnd
     use decompMod   , only : get_proc_bounds, get_proc_global
 !
 ! !ARGUMENTS:
@@ -614,13 +589,11 @@ contains
     call ncd_defdim(ncid, 'pft'     , nump           , dimid)
     
     call ncd_defdim(ncid, 'levgrnd' , nlevgrnd       , dimid)
-    call ncd_defdim(ncid, 'levurb'  , nlevurb        , dimid)
     call ncd_defdim(ncid, 'levlak'  , nlevlak        , dimid)
     call ncd_defdim(ncid, 'levsno'  , nlevsno        , dimid)
     call ncd_defdim(ncid, 'levsno1'  , nlevsno+1     , dimid)
     call ncd_defdim(ncid, 'levtot'  , nlevsno+nlevgrnd, dimid)
     call ncd_defdim(ncid, 'numrad'  , numrad         , dimid)
-    call ncd_defdim(ncid, 'levcan'  , nlevcan        , dimid)
     call ncd_defdim(ncid, 'string_length', 64        , dimid)
        
     ! Define global attributes
@@ -633,7 +606,7 @@ contains
     call ncd_putatt(ncid, NCD_GLOBAL, 'host'    , trim(hostname))
     call ncd_putatt(ncid, NCD_GLOBAL, 'version' , trim(version))
     call ncd_putatt(ncid, NCD_GLOBAL, 'source'  , trim(source))
-    str = '$Id: restFileMod.F90 41292 2012-10-26 13:51:45Z erik $'
+    str = '$Id: restFileMod.F90 42841 2012-12-19 15:48:22Z mvertens $'
     call ncd_putatt(ncid, NCD_GLOBAL, 'revision_id'    , trim(str))
     call ncd_putatt(ncid, NCD_GLOBAL, 'case_title'     , trim(ctitle))
     call ncd_putatt(ncid, NCD_GLOBAL, 'case_id'        , trim(caseid))
@@ -657,7 +630,7 @@ contains
 !
 ! !USES:
     use decompMod,  only : get_proc_bounds, get_proc_global
-    use clm_varpar, only : nlevsno, nlevlak, nlevgrnd, nlevurb
+    use clm_varpar, only : nlevsno, nlevlak, nlevgrnd
     use clm_varctl, only : single_column, nsrest, nsrStartup
     implicit none
 !
@@ -688,7 +661,6 @@ contains
     end if
     call check_dim(ncid, 'levsno'  , nlevsno)
     call check_dim(ncid, 'levgrnd' , nlevgrnd)
-    call check_dim(ncid, 'levurb'  , nlevurb)
     call check_dim(ncid, 'levlak'  , nlevlak) 
 
   end subroutine restFile_dimcheck

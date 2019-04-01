@@ -15,7 +15,6 @@ module Biogeophysics1Mod
 !
 ! !USES:
    use shr_kind_mod, only: r8 => shr_kind_r8
-   use clm_varctl  , only : iulog
 !
 ! !PUBLIC TYPES:
    implicit none
@@ -100,19 +99,11 @@ contains
 !
 ! local pointers to implicit in arguments
 !
-    real(r8), pointer :: frac_sno_eff(:)  ! eff. fraction of ground covered by snow (0 to 1)
-    real(r8), pointer :: frac_h2osfc(:)   ! fraction of ground covered by surface water (0 to 1)
-    real(r8), pointer :: h2osfc(:)        ! surface water (mm)
-    real(r8), pointer :: t_h2osfc(:) 	  ! surface water temperature
-    real(r8), pointer :: t_h2osfc_bef(:)  ! saved surface water temperature
-    real(r8), pointer :: qg_snow(:)       ! specific humidity at snow surface [kg/kg]
-    real(r8), pointer :: qg_soil(:)       ! specific humidity at soil surface [kg/kg]
-    real(r8), pointer :: qg_h2osfc(:)     ! specific humidity at h2osfc surface [kg/kg]
-    logical , pointer :: pactive(:)       !true=>do computations on this pft (see reweightMod for details)
     integer , pointer :: ivt(:)           !pft vegetation type
     integer , pointer :: ityplun(:)       !landunit type
     integer , pointer :: clandunit(:)     !column's landunit index
     integer , pointer :: cgridcell(:)     !column's gridcell index
+    real(r8), pointer :: pwtgcell(:)      !weight relative to gridcell for each pft
     integer , pointer :: ctype(:)         !column type
     real(r8), pointer :: forc_pbot(:)     !atmospheric pressure (Pa)
     real(r8), pointer :: forc_q(:)        !atmospheric specific humidity (kg/kg)
@@ -219,32 +210,23 @@ contains
     real(r8) :: vol_ice       ! partial volume of ice lens in layer
     real(r8) :: vol_liq       ! partial volume of liquid water in layer
     integer  :: pi            !index
-    real(r8) :: fh2o_eff(lbc:ubc) ! effective surface water fraction (i.e. seen by atm)
 !------------------------------------------------------------------------------
 
    ! Assign local pointers to derived type members (gridcell-level)
 
-    frac_sno_eff   => cps%frac_sno_eff
-    frac_h2osfc   => cps%frac_h2osfc
-    h2osfc        => cws%h2osfc
-    t_h2osfc      => ces%t_h2osfc
-    t_h2osfc_bef  => ces%t_h2osfc_bef
-    qg_snow       => cws%qg_snow 
-    qg_soil       => cws%qg_soil
-    qg_h2osfc     => cws%qg_h2osfc
     forc_hgt_t    => clm_a2l%forc_hgt_t
     forc_u        => clm_a2l%forc_u
     forc_v        => clm_a2l%forc_v
     forc_hgt_u    => clm_a2l%forc_hgt_u
     forc_hgt_q    => clm_a2l%forc_hgt_q
-    npfts         =>  grc%npfts
-    pfti          =>  grc%pfti
+    npfts         => grc%npfts
+    pfti          => grc%pfti
 
     ! Assign local pointers to derived type members (landunit-level)
 
     ityplun       => lun%itype
-    z_0_town      =>lun%z_0_town
-    z_d_town      =>lun%z_d_town
+    z_0_town      => lun%z_0_town
+    z_d_town      => lun%z_d_town
 
     ! Assign local pointers to derived type members (column-level)
 
@@ -253,8 +235,8 @@ contains
     forc_t        => ces%forc_t
     forc_th       => ces%forc_th
 
-    cgridcell     =>col%gridcell
-    clandunit     =>col%landunit
+    cgridcell     => col%gridcell
+    clandunit     => col%landunit
     ctype         => col%itype
     beta          => cps%beta
     dqgdT         => cws%dqgdT
@@ -290,8 +272,7 @@ contains
 
     ! Assign local pointers to derived type members (pft-level)
 
-    pactive       => pft%active
-    ivt           =>pft%itype
+    ivt           => pft%itype
     elai          => pps%elai
     esai          => pps%esai
     htop          => pps%htop
@@ -317,11 +298,12 @@ contains
     forc_hgt_u_pft => pps%forc_hgt_u_pft
     forc_hgt_t_pft => pps%forc_hgt_t_pft
     forc_hgt_q_pft => pps%forc_hgt_q_pft
-    plandunit      =>pft%landunit
+    plandunit      => pft%landunit
     frac_veg_nosno => pps%frac_veg_nosno
     thm            => pes%thm
-    pgridcell      =>pft%gridcell
-    pcolumn        =>pft%column
+    pgridcell      => pft%gridcell
+    pcolumn        => pft%column
+    pwtgcell       => pft%wtgcell
 
     ! Assign local pointers to derived type members (ecophysiological)
 
@@ -331,14 +313,7 @@ contains
     do j = -nlevsno+1, nlevgrnd
        do fc = 1,num_nolakec
           c = filter_nolakec(fc)
-          if ((ctype(c) == icol_sunwall .or. ctype(c) == icol_shadewall &
-               .or. ctype(c) == icol_roof) .and. j > nlevurb) then
-            tssbef(c,j) = spval 
-          else
-            tssbef(c,j) = t_soisno(c,j)
-          end if
-          ! record t_h2osfc prior to updating
-          t_h2osfc_bef(c) = t_h2osfc(c)   
+          tssbef(c,j) = t_soisno(c,j)
        end do
     end do
 
@@ -353,14 +328,8 @@ contains
        ! begin calculations that relate only to the column level
        ! Ground and soil temperatures from previous time step
 
-       ! ground temperature is weighted average of exposed soil, snow, and h2osfc
-       if (snl(c) < 0) then
-          t_grnd(c) = frac_sno_eff(c) * t_soisno(c,snl(c)+1) &
-               + (1.0_r8 - frac_sno_eff(c) - frac_h2osfc(c)) * t_soisno(c,1) &
-               + frac_h2osfc(c) * t_h2osfc(c)
-       else
-          t_grnd(c) = (1 - frac_h2osfc(c)) * t_soisno(c,1) + frac_h2osfc(c) * t_h2osfc(c)
-       endif
+       t_grnd(c) = t_soisno(c,snl(c)+1)
+
        ! Saturated vapor pressure, specific humidity and their derivatives
        ! at ground surface
 
@@ -373,19 +342,16 @@ contains
              fac  = max( fac, 0.01_r8 )
              psit = -sucsat(c,1) * fac ** (-bsw(c,1))
              psit = max(smpmin(c), psit)
-             ! modify qred to account for h2osfc
-             hr   = exp(psit/roverg/t_soisno(c,1))
-             qred = (1._r8 - frac_sno(c) - frac_h2osfc(c))*hr &
-                  + frac_sno(c) + frac_h2osfc(c)
+             hr   = exp(psit/roverg/t_grnd(c))
+             qred = (1.-frac_sno(c))*hr + frac_sno(c)
 
              !! Lee and Pielke 1992 beta, added by K.Sakaguchi
              if (wx < watfc(c,1) ) then  !when water content of ths top layer is less than that at F.C.
                 fac_fc  = min(1._r8, wx/watfc(c,1))  !eqn5.66 but divided by theta at field capacity
                 fac_fc  = max( fac_fc, 0.01_r8 )
-                ! modify soil beta by snow cover. soilbeta for snow surface is one
-                soilbeta(c) = (1._r8-frac_sno(c)-frac_h2osfc(c)) &
-                     *0.25_r8*(1._r8 - cos(SHR_CONST_PI*fac_fc))**2._r8 &
-                              + frac_sno(c)+ frac_h2osfc(c)
+                ! modifiy soil beta by snow cover. soilbeta for snow surface is one
+                soilbeta(c) = (1._r8-frac_sno(c))*0.25_r8*(1._r8 - cos(SHR_CONST_PI*fac_fc))**2._r8 &
+                              + frac_sno(c)
              else   !when water content of ths top layer is more than that at F.C.
                 soilbeta(c) = 1._r8
              end if
@@ -430,59 +396,15 @@ contains
           soilbeta(c) =   1._r8
        end if
 
-       ! compute humidities individually for snow, soil, h2osfc for vegetated landunits
-       if (ityplun(l) == istsoil .or. ityplun(l) == istcrop) then
+       call QSat(t_grnd(c), forc_pbot(c), eg, degdT, qsatg, qsatgdT)
 
-          call QSat(t_soisno(c,snl(c)+1), forc_pbot(c), eg, degdT, qsatg, qsatgdT)
-          if (qsatg > forc_q(c) .and. forc_q(c) > qsatg) then
-             qsatg = forc_q(c)
-             qsatgdT = 0._r8
-          end if
+       qg(c) = qred*qsatg
+       dqgdT(c) = qred*qsatgdT
 
-          qg_snow(c) = qsatg
-          dqgdT(c) = frac_sno(c)*qsatgdT
-
-          call QSat(t_soisno(c,1) , forc_pbot(c), eg, degdT, qsatg, qsatgdT)
-          if (qsatg > forc_q(c) .and. forc_q(c) > hr*qsatg) then
-             qsatg = forc_q(c)
-             qsatgdT = 0._r8
-          end if
-          qg_soil(c) = hr*qsatg
-          dqgdT(c) = dqgdT(c) + (1._r8 - frac_sno(c) - frac_h2osfc(c))*hr*qsatgdT
-
-          ! to be consistent with hs_top values in SoilTemp, set qg_snow to qg_soil for snl = 0 case
-          ! this ensures hs_top_snow will equal hs_top_soil
-          if (snl(c) >= 0) then
-             qg_snow(c) = qg_soil(c)
-             dqgdT(c) = (1._r8 - frac_h2osfc(c))*hr*dqgdT(c)
-          endif
-
-          call QSat(t_h2osfc(c), forc_pbot(c), eg, degdT, qsatg, qsatgdT)
-          if (qsatg > forc_q(c) .and. forc_q(c) > qsatg) then
-             qsatg = forc_q(c)
-             qsatgdT = 0._r8
-          end if
-          qg_h2osfc(c) = qsatg
-          dqgdT(c) = dqgdT(c) + frac_h2osfc(c) * qsatgdT
-
-!          qg(c) = frac_sno(c)*qg_snow(c) + (1._r8 - frac_sno(c) - frac_h2osfc(c))*qg_soil(c) &
-          qg(c) = frac_sno_eff(c)*qg_snow(c) + (1._r8 - frac_sno_eff(c) - frac_h2osfc(c))*qg_soil(c) &
-               + frac_h2osfc(c) * qg_h2osfc(c)
-
-       else
-          call QSat(t_grnd(c), forc_pbot(c), eg, degdT, qsatg, qsatgdT)
-          qg(c) = qred*qsatg
-          dqgdT(c) = qred*qsatgdT
-
-          if (qsatg > forc_q(c) .and. forc_q(c) > qred*qsatg) then
-             qg(c) = forc_q(c)
-             dqgdT(c) = 0._r8
-          end if
-
-          qg_snow(c) = qg(c)
-          qg_soil(c) = qg(c)
-          qg_h2osfc(c) = qg(c)
-       endif
+       if (qsatg > forc_q(c) .and. forc_q(c) > qred*qsatg) then
+          qg(c) = forc_q(c)
+          dqgdT(c) = 0._r8
+       end if
 
        ! Ground emissivity - only calculate for non-urban landunits 
        ! Urban emissivities are currently read in from data file
@@ -500,13 +422,6 @@ contains
 
        htvp(c) = hvap
        if (h2osoi_liq(c,snl(c)+1) <= 0._r8 .and. h2osoi_ice(c,snl(c)+1) > 0._r8) htvp(c) = hsub
-
-       ! Switch between vaporization and sublimation causes rapid solution
-       ! separation in perturbation growth test
-
-
-
-
 
        ! Ground roughness lengths over non-lake columns (includes bare ground, ground
        ! underneath canopy, wetlands, etc.)
@@ -580,8 +495,9 @@ contains
        do g = lbg, ubg
           if (pi <= npfts(g)) then
             p = pfti(g) + pi - 1
-            if (pactive(p)) then
-              l = plandunit(p)
+            l = plandunit(p)
+            ! Note: Some glacier_mec pfts may have zero weight  
+            if (pwtgcell(p) > 0._r8 .or. ityplun(l)==istice_mec) then 
               c = pcolumn(p)
               if (ityplun(l) == istsoil .or. ityplun(l) == istcrop) then
                 if (frac_veg_nosno(p) == 0) then
@@ -598,11 +514,17 @@ contains
                 forc_hgt_u_pft(p) = forc_hgt_u(g) + z0mg(c)
                 forc_hgt_t_pft(p) = forc_hgt_t(g) + z0mg(c)
                 forc_hgt_q_pft(p) = forc_hgt_q(g) + z0mg(c)
-              ! Appropriate momentum roughness length will be added in SLakeFLuxesMod.
               else if (ityplun(l) == istdlak) then
-                forc_hgt_u_pft(p) = forc_hgt_u(g)
-                forc_hgt_t_pft(p) = forc_hgt_t(g)
-                forc_hgt_q_pft(p) = forc_hgt_q(g)
+                ! Should change the roughness lengths to shared constants
+                if (t_grnd(c) >= tfrz) then
+                  forc_hgt_u_pft(p) = forc_hgt_u(g) + 0.01_r8
+                  forc_hgt_t_pft(p) = forc_hgt_t(g) + 0.01_r8
+                  forc_hgt_q_pft(p) = forc_hgt_q(g) + 0.01_r8
+                else
+                  forc_hgt_u_pft(p) = forc_hgt_u(g) + 0.04_r8
+                  forc_hgt_t_pft(p) = forc_hgt_t(g) + 0.04_r8
+                  forc_hgt_q_pft(p) = forc_hgt_q(g) + 0.04_r8
+                end if
               else if (ityplun(l) == isturb) then
                 forc_hgt_u_pft(p) = forc_hgt_u(g) + z_0_town(l) + z_d_town(l)
                 forc_hgt_t_pft(p) = forc_hgt_t(g) + z_0_town(l) + z_d_town(l)

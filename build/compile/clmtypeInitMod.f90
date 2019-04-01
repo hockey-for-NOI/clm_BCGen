@@ -11,17 +11,12 @@ module clmtypeInitMod
 ! Allocate clmtype components and initialize them to signaling NaN.
 !
 ! !USES:
-  use shr_kind_mod, only : r8 => shr_kind_r8
+  use shr_kind_mod  , only : r8 => shr_kind_r8
   use shr_infnan_mod, only : nan => shr_infnan_nan, assignment(=)
   use clmtype
-  use clm_varpar  , only : maxpatch_pft, nlevsno, nlevgrnd, numrad, nlevlak, &
-                           numpft, ndst, nlevurb, nlevsoi, nlevdecomp, nlevdecomp_full, &
-                           ndecomp_cascade_transitions, ndecomp_pools, nlevcan
-
-
-
-  use clm_varctl  , only : use_c13, use_c14
-
+  use clm_varpar    , only : maxpatch_pft, nlevsno, nlevgrnd, numrad, nlevlak, &
+                             numpft, ndst, nlevurb, nlevsoi
+  use clm_varctl  , only : use_c13, use_cn, use_cndv, use_crop
 !
 ! !PUBLIC TYPES:
   implicit none
@@ -34,7 +29,7 @@ module clmtypeInitMod
 ! Created by Peter Thornton and Mariana Vertenstein
 ! Modified by Colette L. Heald (05/06) for VOC emission factors
 ! 3/17/08 David Lawrence, changed nlevsoi to nlevgrnd where appropriate
-!!F. Li and S. Levis (11/06/12)
+!
 ! !PRIVATE MEMBER FUNCTIONS:
   private :: init_pft_type
   private :: init_column_type
@@ -43,15 +38,10 @@ module clmtypeInitMod
   private :: init_energy_balance_type
   private :: init_water_balance_type
   private :: init_pft_ecophys_constants
-  private :: init_decomp_cascade_constants
-
-
-
+  private :: init_pft_DGVMecophys_constants
   private :: init_pft_pstate_type
   private :: init_pft_epv_type
-
-
-
+  private :: init_pft_pdgvstate_type
   private :: init_pft_vstate_type
   private :: init_pft_estate_type
   private :: init_pft_wstate_type
@@ -73,17 +63,12 @@ module clmtypeInitMod
   private :: init_column_eflux_type
   private :: init_column_wflux_type
   private :: init_column_cflux_type
-
-
-
   private :: init_column_nflux_type
   private :: init_landunit_pstate_type
   private :: init_landunit_eflux_type
+  private :: init_gridcell_pstate_type
   private :: init_gridcell_efstate_type
   private :: init_gridcell_wflux_type
-
-
-
 !EOP
 !----------------------------------------------------
 
@@ -102,7 +87,7 @@ contains
 ! The following clmtype components should NOT be initialized here
 ! since they are set in routine clm_map which is called before this
 ! routine is invoked
-!    *%area, *%wtlnd, *%wtxy, *%ixy, *%jxy, *%mxy, %snindex
+!    *%area, *%wt, *%wtlnd, *%wtxy, *%ixy, *%jxy, *%mxy, %snindex
 !    *%ifspecial, *%ityplun, *%itype
 !    *%pfti, *%pftf, *%pftn
 !    *%coli, *%colf, *%coln
@@ -146,13 +131,11 @@ contains
 
     call init_pft_ecophys_constants()
 
-    call init_decomp_cascade_constants()
+    ! pft DGVM-specific ecophysiological constants
 
-
-
-
-
-
+    if (use_cndv) then
+       call init_pft_DGVMecophys_constants()
+    end if
 
     ! energy balance structures (all levels)
 
@@ -182,16 +165,14 @@ contains
     ! pft ecophysiological variables (only at the pft level for now)
     call init_pft_epv_type(begp, endp, pepv)
 
-    !pft photosynthesis relevant variables
-    call init_pft_psynstate_type(begp, endp, ppsyns)
+    ! pft DGVM state variables at pft level 
 
-
-
-
-
+    if (use_cndv) then
+       call init_pft_pdgvstate_type(begp, endp, pdgvs)
+    end if
     call init_pft_vstate_type(begp, endp, pvs)
 
-    ! pft energy state variables at the pft level and averaged to the column
+    ! pft energy state variables at the pft level
 
     call init_pft_estate_type(begp, endp, pes)
 
@@ -204,21 +185,14 @@ contains
 
     call init_pft_cstate_type(begp, endp, pcs)
     call init_pft_cstate_type(begc, endc, pcs_a)
-    
-    if ( use_c13 ) then       
+    if (use_c13) then
+       ! 4/14/05: PET
+       ! Adding isotope code
        call init_pft_cstate_type(begp, endp, pc13s)
        call init_pft_cstate_type(begc, endc, pc13s_a)
-
-
-
-    endif
-
-    if ( use_c14 ) then
-       call init_pft_cstate_type(begp, endp, pc14s)
-       call init_pft_cstate_type(begc, endc, pc14s_a)
-
-
-
+       if (use_crop) then
+          call endrun( trim(subname)//" ERROR:: CROP and C13 can NOT be on at the same time" )
+       end if
     endif
 
     ! pft nitrogen state variables at the pft level and averaged to the column
@@ -226,11 +200,11 @@ contains
     call init_pft_nstate_type(begp, endp, pns)
     call init_pft_nstate_type(begc, endc, pns_a)
 
-    ! pft energy flux variables at pft level and averaged to column
+    ! pft energy flux variables at pft level 
 
     call init_pft_eflux_type(begp, endp, pef)
 
-    ! pft momentum flux variables at pft level and averaged to the column
+    ! pft momentum flux variables at pft level 
 
     call init_pft_mflux_type(begp, endp, pmf)
 
@@ -243,15 +217,11 @@ contains
 
     call init_pft_cflux_type(begp, endp, pcf)
     call init_pft_cflux_type(begc, endc, pcf_a)
-    
-    if ( use_c13 ) then       
+    if (use_c13) then
+       ! 4/14/05: PET
+       ! Adding isotope code
        call init_pft_cflux_type(begp, endp, pc13f)
        call init_pft_cflux_type(begc, endc, pc13f_a)
-    endif
-    
-    if ( use_c14 ) then
-       call init_pft_cflux_type(begp, endp, pc14f)
-       call init_pft_cflux_type(begc, endc, pc14f_a)
     endif
 
     ! pft nitrogen flux variables at pft level and averaged to column
@@ -279,7 +249,8 @@ contains
 
     call init_column_pstate_type(begc, endc, cps)
 
-    ! column energy state variables at column level
+    ! column energy state variables at column level 
+
 
     call init_column_estate_type(begc, endc, ces)
 
@@ -290,13 +261,10 @@ contains
     ! column carbon state variables at column level
 
     call init_column_cstate_type(begc, endc, ccs)
-    
-    if ( use_c13 ) then       
+    if (use_c13) then
+       ! 4/14/05: PET
+       ! Adding isotope code
        call init_column_cstate_type(begc, endc, cc13s)
-    endif
-
-    if ( use_c14 ) then       
-       call init_column_cstate_type(begc, endc, cc14s)
     endif
 
     ! column nitrogen state variables at column level
@@ -314,19 +282,11 @@ contains
     ! column carbon flux variables at column level
 
     call init_column_cflux_type(begc, endc, ccf)
-    
-    if ( use_c13 ) then       
+    if (use_c13) then
+       ! 4/14/05: PET
+       ! Adding isotope code
        call init_column_cflux_type(begc, endc, cc13f)
     endif
-    
-    if ( use_c14 ) then       
-       call init_column_cflux_type(begc, endc, cc14f)
-    endif
-
-
-
-
-
 
     ! column nitrogen flux variables at column level
 
@@ -340,11 +300,11 @@ contains
 
     call init_landunit_eflux_type(begl, endl, lef)
 
+    ! gridcell DGVM variables
 
-
-
-
-
+    if (use_cndv) then
+       call init_gridcell_dgvstate_type(begg, endg, gdgvs)
+    end if
 
     ! gridcell physical state variables
 
@@ -365,12 +325,6 @@ contains
 
     call init_gridcell_estate_type(begg, endg, ges)
 
-
-
-
-
-
-
   end subroutine initClmtype
 
 !------------------------------------------------------------------------
@@ -379,7 +333,7 @@ contains
 ! !IROUTINE: init_pft_type
 !
 ! !INTERFACE:
-  subroutine init_pft_type (beg, end, pft)
+  subroutine init_pft_type (beg, end, p)
 !
 ! !DESCRIPTION:
 ! Initialize components of pft_type structure
@@ -387,7 +341,7 @@ contains
 ! !ARGUMENTS:
     implicit none
     integer, intent(in) :: beg, end
-    type(pft_type), intent(inout):: pft
+    type(pft_type), intent(inout):: p
 !
 ! !REVISION HISTORY:
 ! Created by Mariana Vertenstein
@@ -395,13 +349,14 @@ contains
 !EOP
 !------------------------------------------------------------------------
 
-    allocate(pft%gridcell(beg:end),pft%wtgcell(beg:end))
-    allocate(pft%landunit(beg:end),pft%wtlunit(beg:end))
-    allocate(pft%column  (beg:end),pft%wtcol  (beg:end))
-
-    allocate(pft%itype(beg:end))
-    allocate(pft%mxy(beg:end))
-    allocate(pft%active(beg:end))
+    allocate(pft%gridcell(beg:end),&
+             pft%wtgcell(beg:end), &
+             pft%landunit(beg:end),&
+             pft%wtlunit(beg:end), &
+             pft%column(beg:end),  &
+             pft%wtcol(beg:end),   &
+             pft%itype(beg:end),   &
+             pft%mxy(beg:end))
 
   end subroutine init_pft_type
 
@@ -427,13 +382,14 @@ contains
 !EOP
 !------------------------------------------------------------------------
 
-   allocate(col%gridcell(beg:end),col%wtgcell(beg:end))
-   allocate(col%landunit(beg:end),col%wtlunit(beg:end))
-
-   allocate(col%pfti(beg:end),col%pftf(beg:end),col%npfts(beg:end))
-
-   allocate(col%itype(beg:end))
-   allocate(col%active(beg:end))
+   allocate(col%gridcell(beg:end),&
+            col%wtgcell(beg:end), &
+            col%landunit(beg:end),&
+            col%wtlunit(beg:end), &
+            col%pfti(beg:end),    &
+            col%pftf(beg:end),    &
+            col%npfts(beg:end),   &
+            col%itype(beg:end))
 
   end subroutine init_column_type
 
@@ -459,35 +415,36 @@ contains
 !EOP
 !------------------------------------------------------------------------
 
-   allocate(lun%gridcell(beg:end),lun%wtgcell(beg:end))
+   allocate(lun%gridcell(beg:end), &
+            lun%wtgcell(beg:end),  &
+            lun%coli(beg:end),     &
+            lun%colf(beg:end),     &
+            lun%ncolumns(beg:end), &
+            lun%pfti(beg:end),     &
+            lun%pftf(beg:end),     &
+            lun%npfts(beg:end),    & 
+            lun%itype(beg:end),    &
+            lun%ifspecial(beg:end),& 
+            lun%lakpoi(beg:end),   &
+            lun%urbpoi(beg:end),   &
+            lun%glcmecpoi(beg:end))
 
-   allocate(lun%coli(beg:end),lun%colf(beg:end),lun%ncolumns(beg:end))
-   allocate(lun%pfti(beg:end),lun%pftf(beg:end),lun%npfts   (beg:end))
+   ! These should be moved to landunit physical state
+   allocate(lun%canyon_hwr(beg:end),   &
+            lun%wtroad_perv(beg:end),  &
+            lun%ht_roof(beg:end),      &
+            lun%wtlunit_roof(beg:end), &
+            lun%wind_hgt_canyon(beg:end),&
+            lun%z_0_town(beg:end),     &
+            lun%z_d_town(beg:end))
 
-   allocate(lun%itype(beg:end))
-   allocate(lun%ifspecial(beg:end))
-   allocate(lun%lakpoi(beg:end))
-   allocate(lun%urbpoi(beg:end))
-   allocate(lun%glcmecpoi(beg:end))
-   allocate(lun%udenstype(beg:end))
-   allocate(lun%active(beg:end))
-
-   ! MV - these should be moved to landunit physical state -MV
-   allocate(lun%canyon_hwr(beg:end))
-   allocate(lun%wtroad_perv(beg:end))
-   allocate(lun%ht_roof(beg:end))
-   allocate(lun%wtlunit_roof(beg:end))
-   allocate(lun%wind_hgt_canyon(beg:end))
-   allocate(lun%z_0_town(beg:end))
-   allocate(lun%z_d_town(beg:end))
-
-   lun%canyon_hwr(beg:end)  = nan
-   lun%wtroad_perv(beg:end) = nan
-   lun%ht_roof(beg:end) = nan
-   lun%wtlunit_roof(beg:end) = nan
-   lun%wind_hgt_canyon(beg:end) = nan
-   lun%z_0_town(beg:end) = nan
-   lun%z_d_town(beg:end) = nan
+   lun%canyon_hwr(beg:end)     = nan
+   lun%wtroad_perv(beg:end)    = nan
+   lun%ht_roof(beg:end)        = nan
+   lun%wtlunit_roof(beg:end)   = nan
+   lun%wind_hgt_canyon(beg:end)= nan
+   lun%z_0_town(beg:end)       = nan
+   lun%z_d_town(beg:end)       = nan
 
    lun%glcmecpoi(beg:end) = .false.
 
@@ -499,7 +456,7 @@ contains
 ! !IROUTINE: init_gridcell_type
 !
 ! !INTERFACE:
-  subroutine init_gridcell_type (beg, end,grc)
+  subroutine init_gridcell_type (beg, end,g)
 !
 ! !DESCRIPTION:
 ! Initialize components of gridcell_type structure
@@ -507,7 +464,7 @@ contains
 ! !ARGUMENTS:
     implicit none
     integer, intent(in) :: beg, end
-    type(gridcell_type), intent(inout):: grc
+    type(gridcell_type), intent(inout):: g
 !
 ! !REVISION HISTORY:
 ! Created by Mariana Vertenstein
@@ -515,32 +472,35 @@ contains
 !EOP
 !------------------------------------------------------------------------
 
-   allocate(grc%luni(beg:end),grc%lunf(beg:end),grc%nlandunits(beg:end))
-   allocate(grc%coli(beg:end),grc%colf(beg:end),grc%ncolumns  (beg:end))
-   allocate(grc%pfti(beg:end),grc%pftf(beg:end),grc%npfts     (beg:end))
+   allocate(grc%luni(beg:end),      &
+            grc%lunf(beg:end),      &
+            grc%nlandunits(beg:end),&
+            grc%coli(beg:end),      &
+            grc%colf(beg:end),      &
+            grc%ncolumns(beg:end),  &
+            grc%pfti(beg:end),      &
+            grc%pftf(beg:end),      &
+            grc%npfts(beg:end),     &
+            grc%gindex(beg:end),    &
+            grc%area(beg:end),      &
+            grc%lat(beg:end),       &
+            grc%lon(beg:end),       &
+            grc%latdeg(beg:end),    &
+            grc%londeg(beg:end),    &
+            grc%gindex_a(beg:end),  &
+            grc%lat_a(beg:end),     &
+            grc%lon_a(beg:end),     &
+            grc%latdeg_a(beg:end),  &
+            grc%londeg_a(beg:end),  &
+            grc%gris_mask(beg:end), &
+            grc%gris_area(beg:end), &
+            grc%aais_mask(beg:end), &
+            grc%aais_area(beg:end))
 
-   allocate(grc%gindex(beg:end))
-   allocate(grc%area(beg:end))
-   allocate(grc%lat(beg:end))
-   allocate(grc%lon(beg:end))
-   allocate(grc%latdeg(beg:end))
-   allocate(grc%londeg(beg:end))
-   allocate(grc%gindex_a(beg:end))
-   allocate(grc%lat_a(beg:end))
-   allocate(grc%lon_a(beg:end))
-   allocate(grc%latdeg_a(beg:end))
-   allocate(grc%londeg_a(beg:end))
-
-   allocate(grc%gris_mask(beg:end))
-   allocate(grc%gris_area(beg:end))
-   allocate(grc%aais_mask(beg:end))
-   allocate(grc%aais_area(beg:end))
-   allocate(grc%tws(beg:end))
    grc%gris_mask(beg:end) = nan
    grc%gris_area(beg:end) = nan
    grc%aais_mask(beg:end) = nan
    grc%aais_area(beg:end) = nan
-   grc%tws(beg:end) = nan
 
   end subroutine init_gridcell_type
 
@@ -671,6 +631,7 @@ contains
     nbal%begnb(beg:end) = nan
     nbal%endnb(beg:end) = nan
     nbal%errnb(beg:end) = nan
+
   end subroutine init_nitrogen_balance_type
 
 !------------------------------------------------------------------------
@@ -701,6 +662,8 @@ contains
     allocate(pftcon%foln(0:numpft))
     allocate(pftcon%dleaf(0:numpft))
     allocate(pftcon%c3psn(0:numpft))
+    allocate(pftcon%mp(0:numpft))
+    allocate(pftcon%qe25(0:numpft))
     allocate(pftcon%xl(0:numpft))
     allocate(pftcon%rhol(0:numpft,numrad))
     allocate(pftcon%rhos(0:numpft,numrad))
@@ -710,6 +673,7 @@ contains
     allocate(pftcon%displar(0:numpft))
     allocate(pftcon%roota_par(0:numpft))
     allocate(pftcon%rootb_par(0:numpft))
+    allocate(pftcon%sla(0:numpft))
     allocate(pftcon%slatop(0:numpft))
     allocate(pftcon%dsladlai(0:numpft))
     allocate(pftcon%leafcn(0:numpft))
@@ -735,12 +699,8 @@ contains
     allocate(pftcon%evergreen(0:numpft))
     allocate(pftcon%stress_decid(0:numpft))
     allocate(pftcon%season_decid(0:numpft))
+    allocate(pftcon%resist(0:numpft))
     allocate(pftcon%dwood(0:numpft))
-    allocate(pftcon%rootprof_beta(0:numpft))
-    allocate(pftcon%fertnitro(0:numpft))
-    allocate(pftcon%fleafcn(0:numpft))
-    allocate(pftcon%ffrootcn(0:numpft))
-    allocate(pftcon%fstemcn(0:numpft))
 
     pftcon%noveg(:) = huge(1)
     pftcon%tree(:) = huge(1)
@@ -750,6 +710,8 @@ contains
     pftcon%foln(:) = nan
     pftcon%dleaf(:) = nan
     pftcon%c3psn(:) = nan
+    pftcon%mp(:) = nan
+    pftcon%qe25(:) = nan
     pftcon%xl(:) = nan
     pftcon%rhol(:,:numrad) = nan
     pftcon%rhos(:,:numrad) = nan
@@ -759,6 +721,7 @@ contains
     pftcon%displar(:) = nan
     pftcon%roota_par(:) = nan
     pftcon%rootb_par(:) = nan
+    pftcon%sla(:) = nan
     pftcon%slatop(:) = nan
     pftcon%dsladlai(:) = nan
     pftcon%leafcn(:) = nan
@@ -784,76 +747,52 @@ contains
     pftcon%evergreen(:) = nan
     pftcon%stress_decid(:) = nan
     pftcon%season_decid(:) = nan
+    pftcon%resist(:) = nan
     pftcon%dwood(:) = nan
-    pftcon%rootprof_beta(:) = nan
-    pftcon%fertnitro(:) = nan
-    pftcon%fleafcn(:)   = nan
-    pftcon%ffrootcn(:)  = nan
-    pftcon%fstemcn(:)   = nan
+
   end subroutine init_pft_ecophys_constants
 
 !------------------------------------------------------------------------
 !BOP
 !
-! !IROUTINE: init_decomp_cascade_constants
+! !IROUTINE: init_pft_DGVMecophys_constants
 !
 ! !INTERFACE:
-  subroutine init_decomp_cascade_constants()
+  subroutine init_pft_DGVMecophys_constants()
 !
 ! !DESCRIPTION:
-! Initialize decomposition cascade state
+! Initialize pft physical state
 !
 ! !ARGUMENTS:
     implicit none
 !
 ! !REVISION HISTORY:
-! Created by Charlie Koven
+! Created by Mariana Vertenstein
 !
 !EOP
 !------------------------------------------------------------------------
 
-    !-- properties of each pathway along decomposition cascade 
-    allocate(decomp_cascade_con%cascade_step_name(1:ndecomp_cascade_transitions))
-    allocate(decomp_cascade_con%cascade_donor_pool(1:ndecomp_cascade_transitions))
-    allocate(decomp_cascade_con%cascade_receiver_pool(1:ndecomp_cascade_transitions))
-    !-- properties of each decomposing pool
-    allocate(decomp_cascade_con%floating_cn_ratio_decomp_pools(0:ndecomp_pools))
-    allocate(decomp_cascade_con%decomp_pool_name_restart(0:ndecomp_pools))
-    allocate(decomp_cascade_con%decomp_pool_name_history(0:ndecomp_pools))
-    allocate(decomp_cascade_con%decomp_pool_name_long(0:ndecomp_pools))
-    allocate(decomp_cascade_con%decomp_pool_name_short(0:ndecomp_pools))
-    allocate(decomp_cascade_con%is_litter(0:ndecomp_pools))
-    allocate(decomp_cascade_con%is_soil(0:ndecomp_pools))
-    allocate(decomp_cascade_con%is_cwd(0:ndecomp_pools))
-    allocate(decomp_cascade_con%initial_cn_ratio(0:ndecomp_pools))
-    allocate(decomp_cascade_con%initial_stock(0:ndecomp_pools))
-    allocate(decomp_cascade_con%is_metabolic(0:ndecomp_pools))
-    allocate(decomp_cascade_con%is_cellulose(0:ndecomp_pools))
-    allocate(decomp_cascade_con%is_lignin(0:ndecomp_pools))
-    allocate(decomp_cascade_con%spinup_factor(0:ndecomp_pools))
-    !-- properties of each pathway along decomposition cascade 
-    decomp_cascade_con%cascade_step_name(1:ndecomp_cascade_transitions) = ''
-    decomp_cascade_con%cascade_donor_pool(1:ndecomp_cascade_transitions) = 0
-    decomp_cascade_con%cascade_receiver_pool(1:ndecomp_cascade_transitions) = 0
-    !-- properties of each decomposing pool
-    decomp_cascade_con%floating_cn_ratio_decomp_pools(0:ndecomp_pools) = .false.
-    decomp_cascade_con%decomp_pool_name_history(0:ndecomp_pools) = ''
-    decomp_cascade_con%decomp_pool_name_restart(0:ndecomp_pools) = ''
-    decomp_cascade_con%decomp_pool_name_long(0:ndecomp_pools) = ''
-    decomp_cascade_con%decomp_pool_name_short(0:ndecomp_pools) = ''
-    decomp_cascade_con%is_litter(0:ndecomp_pools) = .false.
-    decomp_cascade_con%is_soil(0:ndecomp_pools) = .false.
-    decomp_cascade_con%is_cwd(0:ndecomp_pools) = .false.
-    decomp_cascade_con%initial_cn_ratio(0:ndecomp_pools) = nan
-    decomp_cascade_con%initial_stock(0:ndecomp_pools) = nan
-    decomp_cascade_con%is_metabolic(0:ndecomp_pools) = .false.
-    decomp_cascade_con%is_cellulose(0:ndecomp_pools) = .false.
-    decomp_cascade_con%is_lignin(0:ndecomp_pools) = .false.
-    decomp_cascade_con%spinup_factor(0:ndecomp_pools) = nan
+    allocate(dgv_pftcon%crownarea_max(0:numpft))
+    allocate(dgv_pftcon%tcmin(0:numpft))
+    allocate(dgv_pftcon%tcmax(0:numpft))
+    allocate(dgv_pftcon%gddmin(0:numpft))
+    allocate(dgv_pftcon%twmax(0:numpft))
+    allocate(dgv_pftcon%reinickerp(0:numpft))
+    allocate(dgv_pftcon%allom1(0:numpft))
+    allocate(dgv_pftcon%allom2(0:numpft))
+    allocate(dgv_pftcon%allom3(0:numpft))
 
-  end subroutine init_decomp_cascade_constants
+    dgv_pftcon%crownarea_max(:) = nan
+    dgv_pftcon%tcmin(:) = nan
+    dgv_pftcon%tcmax(:) = nan
+    dgv_pftcon%gddmin(:) = nan
+    dgv_pftcon%twmax(:) = nan
+    dgv_pftcon%reinickerp(:) = nan
+    dgv_pftcon%allom1(:) = nan
+    dgv_pftcon%allom2(:) = nan
+    dgv_pftcon%allom3(:) = nan
 
-
+  end subroutine init_pft_DGVMecophys_constants
 
 !------------------------------------------------------------------------
 !BOP
@@ -867,7 +806,7 @@ contains
 ! Initialize pft physical state
 !
 ! !USES:
-    use clm_varcon, only : spval,ispval
+    use clm_varcon, only : spval
     use surfrdMod , only : crop_prog
 ! !ARGUMENTS:
     implicit none
@@ -879,8 +818,7 @@ contains
 !
 !EOP
 !------------------------------------------------------------------------
-    allocate(pps%prec10(beg:end)) !F. Li and S. Levis
-    allocate(pps%prec60(beg:end)) !F. Li and S. Levis
+
     allocate(pps%frac_veg_nosno(beg:end))
     allocate(pps%frac_veg_nosno_alb(beg:end))
     allocate(pps%emv(beg:end))
@@ -893,16 +831,9 @@ contains
     allocate(pps%dewmx(beg:end))
     allocate(pps%rssun(beg:end))
     allocate(pps%rssha(beg:end))
-    allocate(pps%rhal(beg:end))
-    allocate(pps%vpdal(beg:end))
-    allocate(pps%rssun_z(beg:end,1:nlevcan))
-    allocate(pps%rssha_z(beg:end,1:nlevcan))
     allocate(pps%laisun(beg:end))
     allocate(pps%laisha(beg:end))
-    allocate(pps%laisun_z(beg:end,1:nlevcan))
-    allocate(pps%laisha_z(beg:end,1:nlevcan))
     allocate(pps%btran(beg:end))
-    allocate(pps%btran2(beg:end))   ! F. Li and S. Levis
     allocate(pps%fsun(beg:end))
     allocate(pps%tlai(beg:end))
     allocate(pps%tsai(beg:end))
@@ -918,34 +849,15 @@ contains
     allocate(pps%albd(beg:end,1:numrad))
     allocate(pps%albi(beg:end,1:numrad))
     allocate(pps%fabd(beg:end,1:numrad))
-    allocate(pps%fabd_sun(beg:end,1:numrad))
-    allocate(pps%fabd_sha(beg:end,1:numrad))
     allocate(pps%fabi(beg:end,1:numrad))
-    allocate(pps%fabi_sun(beg:end,1:numrad))
-    allocate(pps%fabi_sha(beg:end,1:numrad))
     allocate(pps%ftdd(beg:end,1:numrad))
     allocate(pps%ftid(beg:end,1:numrad))
     allocate(pps%ftii(beg:end,1:numrad))
-    allocate(pps%vcmaxcintsun(beg:end))
-    allocate(pps%vcmaxcintsha(beg:end))
-    allocate(pps%ncan(beg:end))
-    allocate(pps%nrad(beg:end))
-    allocate(pps%fabd_sun_z(beg:end,1:nlevcan))
-    allocate(pps%fabd_sha_z(beg:end,1:nlevcan))
-    allocate(pps%fabi_sun_z(beg:end,1:nlevcan))
-    allocate(pps%fabi_sha_z(beg:end,1:nlevcan))
-    allocate(pps%fsun_z(beg:end,1:nlevcan))
-    allocate(pps%tlai_z(beg:end,1:nlevcan))
-    allocate(pps%tsai_z(beg:end,1:nlevcan))
     allocate(pps%u10(beg:end))
     allocate(pps%u10_clm(beg:end))
     allocate(pps%va(beg:end))
     allocate(pps%fv(beg:end))
     allocate(pps%ram1(beg:end))
-    allocate(pps%burndate(beg:end))   ! F. Li and S. Levis
-    allocate(pps%ram1_lake(beg:end))
-    allocate(pps%rh_leaf(beg:end))
-    allocate(pps%rhaf(beg:end))
     if ( crop_prog )then
        allocate(pps%hdidx(beg:end))
        allocate(pps%cumvd(beg:end))
@@ -973,18 +885,29 @@ contains
        allocate(pps%peaklai(beg:end))
     end if
     allocate(pps%vds(beg:end))
+    allocate(pps%slasun(beg:end))
+    allocate(pps%slasha(beg:end))
+    allocate(pps%lncsun(beg:end))
+    allocate(pps%lncsha(beg:end))
+    allocate(pps%vcmxsun(beg:end))
+    allocate(pps%vcmxsha(beg:end))
+    allocate(pps%gdir(beg:end))
+    allocate(pps%omega(beg:end,1:numrad))
+    allocate(pps%eff_kid(beg:end,1:numrad))
+    allocate(pps%eff_kii(beg:end,1:numrad))
+    allocate(pps%sun_faid(beg:end,1:numrad))
+    allocate(pps%sun_faii(beg:end,1:numrad))
+    allocate(pps%sha_faid(beg:end,1:numrad))
+    allocate(pps%sha_faii(beg:end,1:numrad))
     allocate(pps%forc_hgt_u_pft(beg:end))
     allocate(pps%forc_hgt_t_pft(beg:end))
     allocate(pps%forc_hgt_q_pft(beg:end))
-    allocate(pps%lfpftd(beg:end))      !F. Li and S. Levis
-
     ! 4/14/05: PET
     ! Adding isotope code
-    
-    if ( use_c13 ) then       
-       allocate(pps%alphapsnsun(beg:end))
-       allocate(pps%alphapsnsha(beg:end))
-    endif
+    allocate(pps%cisun(beg:end))
+    allocate(pps%cisha(beg:end))
+    allocate(pps%alphapsnsun(beg:end))
+    allocate(pps%alphapsnsha(beg:end))
 
     allocate(pps%sandfrac(beg:end))
     allocate(pps%clayfrac(beg:end))
@@ -997,13 +920,6 @@ contains
     pps%rb1(beg:end) = nan
     pps%annlai(:,:) = nan
     
-   ! and vertical profiles for calculating fluxes
-    allocate(pps%leaf_prof(beg:end,1:nlevdecomp_full))
-    allocate(pps%froot_prof(beg:end,1:nlevdecomp_full))
-    allocate(pps%croot_prof(beg:end,1:nlevdecomp_full))
-    allocate(pps%stem_prof(beg:end,1:nlevdecomp_full))
-    pps%prec10(beg:end) = nan   ! F. Li and S. Levis
-    pps%prec60(beg:end) = nan   ! F. Li and S. Levis
     pps%frac_veg_nosno(beg:end) = huge(1)
     pps%frac_veg_nosno_alb(beg:end) = 0
     pps%emv(beg:end) = nan
@@ -1015,27 +931,15 @@ contains
     pps%rresis(beg:end,:nlevgrnd) = spval
     pps%dewmx(beg:end) = nan
     pps%rssun(beg:end) = nan
-    pps%rhal(beg:end) = nan
-    pps%vpdal(beg:end) = nan    
     pps%rssha(beg:end) = nan
-    pps%rssun_z(beg:end,:nlevcan) = nan
-    pps%rssha_z(beg:end,:nlevcan) = nan
     pps%laisun(beg:end) = nan
     pps%laisha(beg:end) = nan
-    pps%laisun_z(beg:end,:nlevcan) = nan
-    pps%laisha_z(beg:end,:nlevcan) = nan
     pps%btran(beg:end) = spval
-    pps%btran2(beg:end) = spval       !F. Li and S. Levis
     pps%fsun(beg:end) = spval
-    pps%fsun_z(beg:end,:nlevcan) = 0._r8
     pps%tlai(beg:end) = 0._r8
     pps%tsai(beg:end) = 0._r8
     pps%elai(beg:end) = 0._r8
-    pps%tlai_z(beg:end,:nlevcan) = 0._r8
-    pps%tsai_z(beg:end,:nlevcan) = 0._r8
     pps%esai(beg:end) = 0._r8
-    pps%ncan(beg:end) = 0
-    pps%nrad(beg:end) = 0
     pps%fwet(beg:end) = nan
     pps%fdry(beg:end) = nan
     pps%dt_veg(beg:end) = nan
@@ -1046,29 +950,15 @@ contains
     pps%albd(beg:end,:numrad) = nan
     pps%albi(beg:end,:numrad) = nan
     pps%fabd(beg:end,:numrad) = nan
-    pps%fabd_sun(beg:end,:numrad) = nan
-    pps%fabd_sha(beg:end,:numrad) = nan
     pps%fabi(beg:end,:numrad) = nan
-    pps%fabi_sun(beg:end,:numrad) = nan
-    pps%fabi_sha(beg:end,:numrad) = nan
     pps%ftdd(beg:end,:numrad) = nan
     pps%ftid(beg:end,:numrad) = nan
     pps%ftii(beg:end,:numrad) = nan
-    pps%vcmaxcintsun(beg:end) = nan
-    pps%vcmaxcintsha(beg:end) = nan
-    pps%fabd_sun_z(beg:end,:nlevcan) = 0._r8
-    pps%fabd_sha_z(beg:end,:nlevcan) = 0._r8
-    pps%fabi_sun_z(beg:end,:nlevcan) = 0._r8
-    pps%fabi_sha_z(beg:end,:nlevcan) = 0._r8
     pps%u10(beg:end) = nan
     pps%u10_clm(beg:end) = nan
     pps%va(beg:end) = nan
     pps%fv(beg:end) = nan
     pps%ram1(beg:end) = nan
-    pps%burndate(beg:end)    = ispval   ! F. Li and S. Levis
-    pps%ram1_lake(beg:end) = nan
-    pps%rh_leaf(beg:end) = spval
-    pps%rhaf(beg:end)    = spval
     if ( crop_prog )then
        pps%hdidx(beg:end)       = nan
        pps%cumvd(beg:end)       = nan
@@ -1096,24 +986,31 @@ contains
        pps%peaklai(beg:end)     = 0
     end if
     pps%vds(beg:end) = nan
+    pps%slasun(beg:end) = nan
+    pps%slasha(beg:end) = nan
+    pps%lncsun(beg:end) = nan
+    pps%lncsha(beg:end) = nan
+    pps%vcmxsun(beg:end) = nan
+    pps%vcmxsha(beg:end) = nan
+    pps%gdir(beg:end) = nan
+    pps%omega(beg:end,1:numrad) = nan
+    pps%eff_kid(beg:end,1:numrad) = nan
+    pps%eff_kii(beg:end,1:numrad) = nan
+    pps%sun_faid(beg:end,1:numrad) = nan
+    pps%sun_faii(beg:end,1:numrad) = nan
+    pps%sha_faid(beg:end,1:numrad) = nan
+    pps%sha_faii(beg:end,1:numrad) = nan
     pps%forc_hgt_u_pft(beg:end) = nan
     pps%forc_hgt_t_pft(beg:end) = nan
     pps%forc_hgt_q_pft(beg:end) = nan
     ! 4/14/05: PET
-    ! Adding isotope code    ! EBK Check this!
-    !!!pps%cisun(beg:end) = spval
-    !!!pps%cisha(beg:end) = spval
-    
-    if ( use_c13 ) then       
-       pps%alphapsnsun(beg:end) = spval
-       pps%alphapsnsha(beg:end) = spval
+    ! Adding isotope code
+    pps%cisun(beg:end) = nan
+    pps%cisha(beg:end) = nan
+    if (use_c13) then
+       pps%alphapsnsun(beg:end) = nan
+       pps%alphapsnsha(beg:end) = nan
     endif
-
-   ! and vertical profiles for calculating fluxes
-    pps%leaf_prof(beg:end,1:nlevdecomp_full) = spval
-    pps%froot_prof(beg:end,1:nlevdecomp_full) = spval
-    pps%croot_prof(beg:end,1:nlevdecomp_full) = spval
-    pps%stem_prof(beg:end,1:nlevdecomp_full) = spval
 
   end subroutine init_pft_pstate_type
 
@@ -1129,8 +1026,6 @@ contains
 ! Initialize pft ecophysiological variables
 !
 ! !USES:
-    use clm_varcon, only : spval
-!
 ! !ARGUMENTS:
     implicit none
     integer, intent(in) :: beg, end
@@ -1154,8 +1049,6 @@ contains
     allocate(pepv%offset_counter(beg:end))
     allocate(pepv%offset_fdd(beg:end))
     allocate(pepv%offset_swi(beg:end))
-    allocate(pepv%fert_counter(beg:end))
-    allocate(pepv%grain_flag(beg:end))
     allocate(pepv%lgsf(beg:end))
     allocate(pepv%bglfr(beg:end))
     allocate(pepv%bgtr(beg:end))
@@ -1166,9 +1059,7 @@ contains
     allocate(pepv%gpp(beg:end))
     allocate(pepv%availc(beg:end))
     allocate(pepv%xsmrpool_recover(beg:end))
-    if ( use_c13 ) then
-       allocate(pepv%xsmrpool_c13ratio(beg:end))
-    endif
+    allocate(pepv%xsmrpool_c13ratio(beg:end))
     allocate(pepv%alloc_pnow(beg:end))
     allocate(pepv%c_allometry(beg:end))
     allocate(pepv%n_allometry(beg:end))
@@ -1186,15 +1077,13 @@ contains
     allocate(pepv%prev_frootc_to_litter(beg:end))
     allocate(pepv%tempsum_npp(beg:end))
     allocate(pepv%annsum_npp(beg:end))
-    if ( use_c13 ) then
-       allocate(pepv%rc13_canair(beg:end))
-       allocate(pepv%rc13_psnsun(beg:end))
-       allocate(pepv%rc13_psnsha(beg:end))
-    endif
-    
-    if ( use_c14 ) then
-       allocate(pepv%rc14_atm(beg:end))
-    endif
+    allocate(pepv%tempsum_litfall(beg:end))
+    allocate(pepv%annsum_litfall(beg:end))
+    ! 4/21/05, PET
+    ! Adding isotope code
+    allocate(pepv%rc13_canair(beg:end))
+    allocate(pepv%rc13_psnsun(beg:end))
+    allocate(pepv%rc13_psnsha(beg:end))
 
     pepv%dormant_flag(beg:end) = nan
     pepv%days_active(beg:end) = nan
@@ -1208,8 +1097,6 @@ contains
     pepv%offset_counter(beg:end) = nan
     pepv%offset_fdd(beg:end) = nan
     pepv%offset_swi(beg:end) = nan
-    pepv%fert_counter(beg:end) = nan
-    pepv%grain_flag(beg:end) = nan
     pepv%lgsf(beg:end) = nan
     pepv%bglfr(beg:end) = nan
     pepv%bgtr(beg:end) = nan
@@ -1220,7 +1107,7 @@ contains
     pepv%gpp(beg:end) = nan
     pepv%availc(beg:end) = nan
     pepv%xsmrpool_recover(beg:end) = nan
-    if ( use_c13 ) then
+    if (use_c13) then
        pepv%xsmrpool_c13ratio(beg:end) = nan
     endif
     pepv%alloc_pnow(beg:end) = nan
@@ -1240,21 +1127,76 @@ contains
     pepv%prev_frootc_to_litter(beg:end) = nan
     pepv%tempsum_npp(beg:end) = nan
     pepv%annsum_npp(beg:end) = nan
-    if ( use_c13 ) then
-       pepv%rc13_canair(beg:end) = spval
-       pepv%rc13_psnsun(beg:end) = spval
-       pepv%rc13_psnsha(beg:end) = spval
-    endif
-
-    if ( use_c14 ) then
-       pepv%rc14_atm(beg:end) = nan
-       ! pepv%rc14_canair(beg:end) = nan
-       ! pepv%rc14_psnsun(beg:end) = nan
-       ! pepv%rc14_psnsha(beg:end) = nan
+    pepv%tempsum_litfall(beg:end) = nan
+    pepv%annsum_litfall(beg:end) = nan
+    if (use_c13) then
+       ! 4/21/05, PET
+       ! Adding isotope code
+       pepv%rc13_canair(beg:end) = nan
+       pepv%rc13_psnsun(beg:end) = nan
+       pepv%rc13_psnsha(beg:end) = nan
     endif
     
   end subroutine init_pft_epv_type
 
+!------------------------------------------------------------------------
+!BOP
+!
+! !IROUTINE: init_pft_pdgvstate_type
+!
+! !INTERFACE:
+  subroutine init_pft_pdgvstate_type(beg, end, pdgvs)
+!
+! !DESCRIPTION:
+! Initialize pft DGVM state variables
+!
+! !USES:
+! !ARGUMENTS:
+    implicit none
+    integer, intent(in) :: beg, end
+    type (pft_dgvstate_type), intent(inout):: pdgvs
+!
+! !REVISION HISTORY:
+! Created by Mariana Vertenstein
+!
+!EOP
+!------------------------------------------------------------------------
+
+    allocate(pdgvs%agddtw(beg:end))
+    allocate(pdgvs%agdd(beg:end))
+    allocate(pdgvs%t_mo(beg:end))
+    allocate(pdgvs%t_mo_min(beg:end))
+    allocate(pdgvs%prec365(beg:end))
+    allocate(pdgvs%present(beg:end))
+    allocate(pdgvs%pftmayexist(beg:end))
+    allocate(pdgvs%nind(beg:end))
+    allocate(pdgvs%lm_ind(beg:end))
+    allocate(pdgvs%lai_ind(beg:end))
+    allocate(pdgvs%fpcinc(beg:end))
+    allocate(pdgvs%fpcgrid(beg:end))
+    allocate(pdgvs%fpcgridold(beg:end))
+    allocate(pdgvs%crownarea(beg:end))
+    allocate(pdgvs%greffic(beg:end))
+    allocate(pdgvs%heatstress(beg:end))
+
+    pdgvs%agddtw(beg:end)           = nan
+    pdgvs%agdd(beg:end)             = nan
+    pdgvs%t_mo(beg:end)             = nan
+    pdgvs%t_mo_min(beg:end)         = nan
+    pdgvs%prec365(beg:end)          = nan
+    pdgvs%present(beg:end)          = .false.
+    pdgvs%pftmayexist(beg:end)      = .true.
+    pdgvs%nind(beg:end)             = nan
+    pdgvs%lm_ind(beg:end)           = nan
+    pdgvs%lai_ind(beg:end)          = nan
+    pdgvs%fpcinc(beg:end)           = nan
+    pdgvs%fpcgrid(beg:end)          = nan
+    pdgvs%fpcgridold(beg:end)       = nan
+    pdgvs%crownarea(beg:end)        = nan
+    pdgvs%greffic(beg:end)          = nan
+    pdgvs%heatstress(beg:end)       = nan
+
+  end subroutine init_pft_pdgvstate_type
 
 !------------------------------------------------------------------------
 !BOP
@@ -1300,71 +1242,6 @@ contains
     pvs%fsun240 (beg:end)   = spval
     pvs%elai_p  (beg:end)   = spval
   end subroutine init_pft_vstate_type
-!------------------------------------------------------------------------
-!BOP
-!
-! !IROUTINE: init_pft_psynstate_type
-!
-! !INTERFACE:
-  subroutine init_pft_psynstate_type(beg, end, ppsyns)
-!
-! !DESCRIPTION:
-! Initialize pft energy state
-!
-! !USES:
-    use clm_varcon, only : spval 
-    use surfrdMod, only : crop_prog
-! !AGUMENTS:
-    implicit none
-    integer, intent(in) :: beg, end
-    type (pft_psynstate_type), intent(inout):: ppsyns
-!
-! !REVISION HISTORY:
-! Created by Jinyun Tang
-!
-!EOP
-!-----------------------------------------------------------------------
-
-   allocate(ppsyns%c3flag(beg:end))
-   allocate(ppsyns%ac(beg:end,1:nlevcan))
-   allocate(ppsyns%aj(beg:end,1:nlevcan))
-   allocate(ppsyns%ap(beg:end,1:nlevcan))
-   allocate(ppsyns%ag(beg:end,1:nlevcan))
-   allocate(ppsyns%an(beg:end,1:nlevcan))
-   allocate(ppsyns%vcmax_z(beg:end,1:nlevcan))
-   allocate(ppsyns%cp(beg:end))
-   allocate(ppsyns%kc(beg:end))
-   allocate(ppsyns%ko(beg:end))
-   allocate(ppsyns%qe(beg:end))
-   allocate(ppsyns%tpu_z(beg:end,1:nlevcan))
-   allocate(ppsyns%kp_z(beg:end,1:nlevcan))   
-   allocate(ppsyns%theta_cj(beg:end))
-   allocate(ppsyns%bbb(beg:end))
-   allocate(ppsyns%mbb(beg:end))
-   allocate(ppsyns%gb_mol(beg:end))
-   allocate(ppsyns%gs_mol(beg:end,1:nlevcan))
-
-   ppsyns%c3flag = .false.
-   ppsyns%ac(beg:end,1:nlevcan) = nan
-   ppsyns%aj(beg:end,1:nlevcan) = nan
-   ppsyns%ap(beg:end,1:nlevcan) = nan
-   ppsyns%ag(beg:end,1:nlevcan) = nan
-   ppsyns%an(beg:end,1:nlevcan) = nan
-   ppsyns%vcmax_z(beg:end,1:nlevcan) = nan
-   ppsyns%cp(beg:end) = nan
-   ppsyns%kc(beg:end) = nan
-   ppsyns%ko(beg:end) = nan
-   ppsyns%qe(beg:end) = nan
-   ppsyns%tpu_z(beg:end,1:nlevcan) = nan
-   ppsyns%kp_z(beg:end,1:nlevcan) = nan
-   ppsyns%theta_cj(beg:end) = nan
-   ppsyns%bbb(beg:end) = nan
-   ppsyns%mbb(beg:end) = nan
-   ppsyns%gb_mol(beg:end) = nan
-   ppsyns%gs_mol(beg:end,1:nlevcan) = nan
-
-  end subroutine init_pft_psynstate_type
-
 
 !------------------------------------------------------------------------
 !BOP
@@ -1458,8 +1335,6 @@ contains
 ! !DESCRIPTION:
 ! Initialize pft water state
 !
-! !USES:
-    use clm_varcon, only : spval
 ! !ARGUMENTS:
     implicit none
     integer, intent(in) :: beg, end
@@ -1472,7 +1347,7 @@ contains
 !------------------------------------------------------------------------
 
     allocate(pws%h2ocan(beg:end))
-    pws%h2ocan(beg:end) = spval
+    pws%h2ocan(beg:end) = nan
 
   end subroutine init_pft_wstate_type
 
@@ -1533,6 +1408,7 @@ contains
        allocate(pcs%grainc_storage(beg:end))
        allocate(pcs%grainc_xfer(beg:end))
     end if
+    allocate(pcs%woodc(beg:end))
 
     pcs%leafc(beg:end) = nan
     pcs%leafc_storage(beg:end) = nan
@@ -1567,6 +1443,7 @@ contains
        pcs%grainc_storage(beg:end) = nan
        pcs%grainc_xfer(beg:end)    = nan
     end if
+    pcs%woodc(beg:end) = nan
 
   end subroutine init_pft_cstate_type
 
@@ -1685,8 +1562,8 @@ contains
     allocate(pef%fsa_u(beg:end))
     allocate(pef%fsa_r(beg:end))
     allocate(pef%fsr(beg:end))
-    allocate(pef%parsun_z(beg:end,1:nlevcan))
-    allocate(pef%parsha_z(beg:end,1:nlevcan))
+    allocate(pef%parsun(beg:end))
+    allocate(pef%parsha(beg:end))
     allocate(pef%dlrad(beg:end))
     allocate(pef%ulrad(beg:end))
     allocate(pef%eflx_lh_tot(beg:end))
@@ -1711,7 +1588,6 @@ contains
     allocate(pef%cgrndl(beg:end))
     allocate(pef%cgrnds(beg:end))
     allocate(pef%eflx_gnet(beg:end))
-    allocate(pef%eflx_grnd_lake(beg:end))
     allocate(pef%dgnetdT(beg:end))
     allocate(pef%eflx_lwrad_out(beg:end))
     allocate(pef%eflx_lwrad_net(beg:end))
@@ -1727,13 +1603,22 @@ contains
     allocate(pef%fsr_vis_i(beg:end))
     allocate(pef%fsr_nir_i(beg:end))
     allocate(pef%fsds_vis_d_ln(beg:end))
-    allocate(pef%fsds_vis_i_ln(beg:end))
-    allocate(pef%parveg_ln(beg:end))
     allocate(pef%fsds_nir_d_ln(beg:end))
     allocate(pef%fsr_vis_d_ln(beg:end))
     allocate(pef%fsr_nir_d_ln(beg:end))
+    allocate(pef%sun_add(beg:end,1:numrad))
+    allocate(pef%tot_aid(beg:end,1:numrad))
+    allocate(pef%sun_aid(beg:end,1:numrad))
+    allocate(pef%sun_aii(beg:end,1:numrad))
+    allocate(pef%sha_aid(beg:end,1:numrad))
+    allocate(pef%sha_aii(beg:end,1:numrad))
+    allocate(pef%sun_atot(beg:end,1:numrad))
+    allocate(pef%sha_atot(beg:end,1:numrad))
+    allocate(pef%sun_alf(beg:end,1:numrad))
+    allocate(pef%sha_alf(beg:end,1:numrad))
+    allocate(pef%sun_aperlai(beg:end,1:numrad))
+    allocate(pef%sha_aperlai(beg:end,1:numrad))
     allocate(pef%sabg_lyr(beg:end,-nlevsno+1:1))
-    allocate(pef%sabg_pen(beg:end))
     allocate(pef%sfc_frc_aer(beg:end))
     allocate(pef%sfc_frc_bc(beg:end))
     allocate(pef%sfc_frc_oc(beg:end))
@@ -1757,8 +1642,8 @@ contains
     pef%fsa_u(beg:end) = nan
     pef%fsa_r(beg:end) = nan
     pef%fsr(beg:end) = nan
-    pef%parsun_z(beg:end,:nlevcan) = nan
-    pef%parsha_z(beg:end,:nlevcan) = nan
+    pef%parsun(beg:end) = nan
+    pef%parsha(beg:end) = nan
     pef%dlrad(beg:end) = nan
     pef%ulrad(beg:end) = nan
     pef%eflx_lh_tot(beg:end) = nan
@@ -1783,7 +1668,6 @@ contains
     pef%cgrndl(beg:end) = nan
     pef%cgrnds(beg:end) = nan
     pef%eflx_gnet(beg:end) = nan
-    pef%eflx_grnd_lake(beg:end) = nan
     pef%dgnetdT(beg:end) = nan
     pef%eflx_lwrad_out(beg:end) = nan
     pef%eflx_lwrad_net(beg:end) = nan
@@ -1791,8 +1675,6 @@ contains
     pef%eflx_lwrad_net_r(beg:end) = nan
     pef%netrad(beg:end) = nan
     pef%fsds_vis_d(beg:end) = nan
-    pef%fsds_vis_i_ln(beg:end) = nan
-    pef%parveg_ln(beg:end) = nan
     pef%fsds_nir_d(beg:end) = nan
     pef%fsds_vis_i(beg:end) = nan
     pef%fsds_nir_i(beg:end) = nan
@@ -1804,8 +1686,19 @@ contains
     pef%fsds_nir_d_ln(beg:end) = nan
     pef%fsr_vis_d_ln(beg:end) = nan
     pef%fsr_nir_d_ln(beg:end) = nan
+    pef%sun_add(beg:end,1:numrad) = nan
+    pef%tot_aid(beg:end,1:numrad) = nan
+    pef%sun_aid(beg:end,1:numrad) = nan
+    pef%sun_aii(beg:end,1:numrad) = nan
+    pef%sha_aid(beg:end,1:numrad) = nan
+    pef%sha_aii(beg:end,1:numrad) = nan
+    pef%sun_atot(beg:end,1:numrad) = nan
+    pef%sha_atot(beg:end,1:numrad) = nan
+    pef%sun_alf(beg:end,1:numrad) = nan
+    pef%sha_alf(beg:end,1:numrad) = nan
+    pef%sun_aperlai(beg:end,1:numrad) = nan
+    pef%sha_aperlai(beg:end,1:numrad) = nan
     pef%sabg_lyr(beg:end,-nlevsno+1:1) = nan
-    pef%sabg_pen(beg:end) = nan
     pef%sfc_frc_aer(beg:end) = nan
     pef%sfc_frc_bc(beg:end) = nan
     pef%sfc_frc_oc(beg:end) = nan
@@ -1822,19 +1715,6 @@ contains
     pef%fsds_sno_nd(beg:end) = nan
     pef%fsds_sno_vi(beg:end) = nan
     pef%fsds_sno_ni(beg:end) = nan
-    allocate(pef%eflx_sh_snow(beg:end))
-    allocate(pef%eflx_sh_soil(beg:end))
-    allocate(pef%eflx_sh_h2osfc(beg:end))
-    pef%eflx_sh_snow(beg:end) = nan
-    pef%eflx_sh_soil(beg:end) = nan
-    pef%eflx_sh_h2osfc(beg:end) = nan
-
-    allocate(pef%sabg_soil(beg:end))
-    allocate(pef%sabg_snow(beg:end))
-    allocate(pef%sabg_chk(beg:end))
-    pef%sabg_soil(beg:end) = nan
-    pef%sabg_snow(beg:end) = nan
-    pef%sabg_chk(beg:end) = nan
   end subroutine init_pft_eflux_type
 
 !------------------------------------------------------------------------
@@ -1916,17 +1796,11 @@ contains
     pwf%qflx_evap_can(beg:end) = nan
     pwf%qflx_evap_soi(beg:end) = nan
     pwf%qflx_evap_tot(beg:end) = nan
-    pwf%qflx_evap_grnd(beg:end) = 0.0_r8
-    pwf%qflx_dew_grnd(beg:end) = 0.0_r8
-    pwf%qflx_sub_snow(beg:end) = 0.0_r8
-    pwf%qflx_dew_snow(beg:end) = 0.0_r8
+    pwf%qflx_evap_grnd(beg:end) = nan
+    pwf%qflx_dew_grnd(beg:end) = nan
+    pwf%qflx_sub_snow(beg:end) = nan
+    pwf%qflx_dew_snow(beg:end) = nan
 
-    allocate(pwf%qflx_ev_snow(beg:end))
-    allocate(pwf%qflx_ev_soil(beg:end))
-    allocate(pwf%qflx_ev_h2osfc(beg:end))
-    pwf%qflx_ev_snow(beg:end) = nan
-    pwf%qflx_ev_soil(beg:end) = nan
-    pwf%qflx_ev_h2osfc(beg:end) = nan
   end subroutine init_pft_wflux_type
 
 !------------------------------------------------------------------------
@@ -1956,25 +1830,8 @@ contains
 
     allocate(pcf%psnsun(beg:end))
     allocate(pcf%psnsha(beg:end))
-    allocate(pcf%psnsun_z(beg:end,1:nlevcan))
-    allocate(pcf%psnsha_z(beg:end,1:nlevcan))
-    allocate(pcf%cisun_z(beg:end,1:nlevcan))
-    allocate(pcf%cisha_z(beg:end,1:nlevcan))
-    allocate(pcf%lmrsun(beg:end))
-    allocate(pcf%lmrsha(beg:end))
-    allocate(pcf%lmrsun_z(beg:end,1:nlevcan))
-    allocate(pcf%lmrsha_z(beg:end,1:nlevcan))
     allocate(pcf%fpsn(beg:end))
     allocate(pcf%fco2(beg:end))
-    allocate(pcf%psnsun_wc(beg:end))
-    allocate(pcf%psnsha_wc(beg:end))
-    allocate(pcf%fpsn_wc(beg:end))
-    allocate(pcf%psnsun_wj(beg:end))
-    allocate(pcf%psnsha_wj(beg:end))
-    allocate(pcf%fpsn_wj(beg:end))
-    allocate(pcf%psnsun_wp(beg:end))
-    allocate(pcf%psnsha_wp(beg:end))
-    allocate(pcf%fpsn_wp(beg:end))
 
     allocate(pcf%m_leafc_to_litter(beg:end))
     allocate(pcf%m_frootc_to_litter(beg:end))
@@ -2017,53 +1874,29 @@ contains
     allocate(pcf%hrv_deadcrootc_xfer_to_litter(beg:end))   
     allocate(pcf%hrv_gresp_storage_to_litter(beg:end))     
     allocate(pcf%hrv_gresp_xfer_to_litter(beg:end))        
-    allocate(pcf%hrv_xsmrpool_to_atm(beg:end))    
-             
-    ! fire related variables changed by F. Li and S. Levis           
+    allocate(pcf%hrv_xsmrpool_to_atm(beg:end))                 
     allocate(pcf%m_leafc_to_fire(beg:end))
-    allocate(pcf%m_leafc_storage_to_fire(beg:end))
-    allocate(pcf%m_leafc_xfer_to_fire(beg:end))
-    allocate(pcf%m_livestemc_to_fire(beg:end))
-    allocate(pcf%m_livestemc_storage_to_fire(beg:end))
-    allocate(pcf%m_livestemc_xfer_to_fire(beg:end))
-    allocate(pcf%m_deadstemc_to_fire(beg:end))
-    allocate(pcf%m_deadstemc_storage_to_fire(beg:end))
-    allocate(pcf%m_deadstemc_xfer_to_fire(beg:end))
     allocate(pcf%m_frootc_to_fire(beg:end))
+    allocate(pcf%m_leafc_storage_to_fire(beg:end))
     allocate(pcf%m_frootc_storage_to_fire(beg:end))
-    allocate(pcf%m_frootc_xfer_to_fire(beg:end))
-    allocate(pcf%m_livecrootc_to_fire(beg:end))
+    allocate(pcf%m_livestemc_storage_to_fire(beg:end))
+    allocate(pcf%m_deadstemc_storage_to_fire(beg:end))
     allocate(pcf%m_livecrootc_storage_to_fire(beg:end))
-    allocate(pcf%m_livecrootc_xfer_to_fire(beg:end))
-    allocate(pcf%m_deadcrootc_to_fire(beg:end))
     allocate(pcf%m_deadcrootc_storage_to_fire(beg:end))
+    allocate(pcf%m_leafc_xfer_to_fire(beg:end))
+    allocate(pcf%m_frootc_xfer_to_fire(beg:end))
+    allocate(pcf%m_livestemc_xfer_to_fire(beg:end))
+    allocate(pcf%m_deadstemc_xfer_to_fire(beg:end))
+    allocate(pcf%m_livecrootc_xfer_to_fire(beg:end))
     allocate(pcf%m_deadcrootc_xfer_to_fire(beg:end))
+    allocate(pcf%m_livestemc_to_fire(beg:end))
+    allocate(pcf%m_deadstemc_to_fire(beg:end))
+    allocate(pcf%m_deadstemc_to_litter_fire(beg:end))
+    allocate(pcf%m_livecrootc_to_fire(beg:end))
+    allocate(pcf%m_deadcrootc_to_fire(beg:end))
+    allocate(pcf%m_deadcrootc_to_litter_fire(beg:end))
     allocate(pcf%m_gresp_storage_to_fire(beg:end))
     allocate(pcf%m_gresp_xfer_to_fire(beg:end))
-    allocate(pcf%m_leafc_to_litter_fire(beg:end))
-    allocate(pcf%m_leafc_storage_to_litter_fire(beg:end))
-    allocate(pcf%m_leafc_xfer_to_litter_fire(beg:end))
-    allocate(pcf%m_livestemc_to_litter_fire(beg:end))
-    allocate(pcf%m_livestemc_storage_to_litter_fire(beg:end))
-    allocate(pcf%m_livestemc_xfer_to_litter_fire(beg:end))
-    allocate(pcf%m_livestemc_to_deadstemc_fire(beg:end))
-    allocate(pcf%m_deadstemc_to_litter_fire(beg:end))
-    allocate(pcf%m_deadstemc_storage_to_litter_fire(beg:end))
-    allocate(pcf%m_deadstemc_xfer_to_litter_fire(beg:end))
-    allocate(pcf%m_frootc_to_litter_fire(beg:end))
-    allocate(pcf%m_frootc_storage_to_litter_fire(beg:end))
-    allocate(pcf%m_frootc_xfer_to_litter_fire(beg:end))
-    allocate(pcf%m_livecrootc_to_litter_fire(beg:end))
-    allocate(pcf%m_livecrootc_storage_to_litter_fire(beg:end))
-    allocate(pcf%m_livecrootc_xfer_to_litter_fire(beg:end))
-    allocate(pcf%m_livecrootc_to_deadcrootc_fire(beg:end))
-    allocate(pcf%m_deadcrootc_to_litter_fire(beg:end))
-    allocate(pcf%m_deadcrootc_storage_to_litter_fire(beg:end))
-    allocate(pcf%m_deadcrootc_xfer_to_litter_fire(beg:end))
-    allocate(pcf%m_gresp_storage_to_litter_fire(beg:end))
-    allocate(pcf%m_gresp_xfer_to_litter_fire(beg:end))
-
-
     allocate(pcf%leafc_xfer_to_leafc(beg:end))
     allocate(pcf%frootc_xfer_to_frootc(beg:end))
     allocate(pcf%livestemc_xfer_to_livestemc(beg:end))
@@ -2076,17 +1909,14 @@ contains
     allocate(pcf%froot_mr(beg:end))
     allocate(pcf%livestem_mr(beg:end))
     allocate(pcf%livecroot_mr(beg:end))
-    allocate(pcf%grain_mr(beg:end))
     allocate(pcf%leaf_curmr(beg:end))
     allocate(pcf%froot_curmr(beg:end))
     allocate(pcf%livestem_curmr(beg:end))
     allocate(pcf%livecroot_curmr(beg:end))
-    allocate(pcf%grain_curmr(beg:end))
     allocate(pcf%leaf_xsmr(beg:end))
     allocate(pcf%froot_xsmr(beg:end))
     allocate(pcf%livestem_xsmr(beg:end))
     allocate(pcf%livecroot_xsmr(beg:end))
-    allocate(pcf%grain_xsmr(beg:end))
     allocate(pcf%psnsun_to_cpool(beg:end))
     allocate(pcf%psnshade_to_cpool(beg:end))
     allocate(pcf%cpool_to_xsmrpool(beg:end))
@@ -2159,28 +1989,19 @@ contains
        allocate(pcf%transfer_grain_gr(beg:end))
        allocate(pcf%grainc_storage_to_xfer(beg:end))
     end if
+    if (use_cn) then
+       allocate(pcf%frootc_alloc(beg:end))
+       allocate(pcf%frootc_loss(beg:end))
+       allocate(pcf%leafc_alloc(beg:end))
+       allocate(pcf%leafc_loss(beg:end))
+       allocate(pcf%woodc_alloc(beg:end))
+       allocate(pcf%woodc_loss(beg:end))
+    end if
 
     pcf%psnsun(beg:end) = nan
     pcf%psnsha(beg:end) = nan
-    pcf%psnsun_z(beg:end,:nlevcan) = nan
-    pcf%psnsha_z(beg:end,:nlevcan) = nan
-    pcf%cisun_z(beg:end,:nlevcan) = nan
-    pcf%cisha_z(beg:end,:nlevcan) = nan
-    pcf%lmrsun(beg:end) = nan
-    pcf%lmrsha(beg:end) = nan
-    pcf%lmrsun_z(beg:end,:nlevcan) = nan
-    pcf%lmrsha_z(beg:end,:nlevcan) = nan
     pcf%fpsn(beg:end) = spval
     pcf%fco2(beg:end) = 0._r8
-    pcf%psnsun_wc(beg:end) = nan
-    pcf%psnsha_wc(beg:end) = nan
-    pcf%fpsn_wc(beg:end) = nan
-    pcf%psnsun_wj(beg:end) = nan
-    pcf%psnsha_wj(beg:end) = nan
-    pcf%fpsn_wj(beg:end) = nan
-    pcf%psnsun_wp(beg:end) = nan
-    pcf%psnsha_wp(beg:end) = nan
-    pcf%fpsn_wp(beg:end) = nan
 
     pcf%m_leafc_to_litter(beg:end) = nan
     pcf%m_frootc_to_litter(beg:end) = nan
@@ -2223,54 +2044,29 @@ contains
     pcf%hrv_deadcrootc_xfer_to_litter(beg:end) = nan   
     pcf%hrv_gresp_storage_to_litter(beg:end) = nan     
     pcf%hrv_gresp_xfer_to_litter(beg:end) = nan        
-    pcf%hrv_xsmrpool_to_atm(beg:end) = nan            
-     
-    ! fire variable changed by F. Li and S. Levis
+    pcf%hrv_xsmrpool_to_atm(beg:end) = nan                 
     pcf%m_leafc_to_fire(beg:end) = nan
-    pcf%m_leafc_storage_to_fire(beg:end) = nan
-    pcf%m_leafc_xfer_to_fire(beg:end) = nan
-    pcf%m_livestemc_to_fire(beg:end) = nan
-    pcf%m_livestemc_storage_to_fire(beg:end) = nan
-    pcf%m_livestemc_xfer_to_fire(beg:end) = nan
-    pcf%m_deadstemc_to_fire(beg:end) = nan
-    pcf%m_deadstemc_storage_to_fire(beg:end) = nan
-    pcf%m_deadstemc_xfer_to_fire(beg:end) = nan
     pcf%m_frootc_to_fire(beg:end) = nan
+    pcf%m_leafc_storage_to_fire(beg:end) = nan
     pcf%m_frootc_storage_to_fire(beg:end) = nan
-    pcf%m_frootc_xfer_to_fire(beg:end) = nan
-    pcf%m_livecrootc_to_fire(beg:end) = nan
+    pcf%m_livestemc_storage_to_fire(beg:end) = nan
+    pcf%m_deadstemc_storage_to_fire(beg:end) = nan
     pcf%m_livecrootc_storage_to_fire(beg:end) = nan
-    pcf%m_livecrootc_xfer_to_fire(beg:end) = nan
-    pcf%m_deadcrootc_to_fire(beg:end) = nan
     pcf%m_deadcrootc_storage_to_fire(beg:end) = nan
+    pcf%m_leafc_xfer_to_fire(beg:end) = nan
+    pcf%m_frootc_xfer_to_fire(beg:end) = nan
+    pcf%m_livestemc_xfer_to_fire(beg:end) = nan
+    pcf%m_deadstemc_xfer_to_fire(beg:end) = nan
+    pcf%m_livecrootc_xfer_to_fire(beg:end) = nan
     pcf%m_deadcrootc_xfer_to_fire(beg:end) = nan
+    pcf%m_livestemc_to_fire(beg:end) = nan
+    pcf%m_deadstemc_to_fire(beg:end) = nan
+    pcf%m_deadstemc_to_litter_fire(beg:end) = nan
+    pcf%m_livecrootc_to_fire(beg:end) = nan
+    pcf%m_deadcrootc_to_fire(beg:end) = nan
+    pcf%m_deadcrootc_to_litter_fire(beg:end) = nan
     pcf%m_gresp_storage_to_fire(beg:end) = nan
     pcf%m_gresp_xfer_to_fire(beg:end) = nan
-    
-    pcf%m_leafc_to_litter_fire(beg:end) = nan
-    pcf%m_leafc_storage_to_litter_fire(beg:end) = nan
-    pcf%m_leafc_xfer_to_litter_fire(beg:end) = nan
-    pcf%m_livestemc_to_litter_fire(beg:end) = nan
-    pcf%m_livestemc_storage_to_litter_fire(beg:end) = nan
-    pcf%m_livestemc_xfer_to_litter_fire(beg:end) = nan
-    pcf%m_livestemc_to_deadstemc_fire(beg:end) = nan
-    pcf%m_deadstemc_to_litter_fire(beg:end) = nan
-    pcf%m_deadstemc_storage_to_litter_fire(beg:end) = nan
-    pcf%m_deadstemc_xfer_to_litter_fire(beg:end) = nan
-    pcf%m_frootc_to_litter_fire(beg:end) = nan
-    pcf%m_frootc_storage_to_litter_fire(beg:end) = nan
-    pcf%m_frootc_xfer_to_litter_fire(beg:end) = nan
-    pcf%m_livecrootc_to_litter_fire(beg:end) = nan
-    pcf%m_livecrootc_storage_to_litter_fire(beg:end) = nan
-    pcf%m_livecrootc_xfer_to_litter_fire(beg:end) = nan
-    pcf%m_livecrootc_to_deadcrootc_fire(beg:end) = nan
-    pcf%m_deadcrootc_to_litter_fire(beg:end) = nan
-    pcf%m_deadcrootc_storage_to_litter_fire(beg:end) = nan
-    pcf%m_deadcrootc_xfer_to_litter_fire(beg:end) = nan
-    pcf%m_gresp_storage_to_litter_fire(beg:end) = nan
-    pcf%m_gresp_xfer_to_litter_fire(beg:end) = nan
-
-
     pcf%leafc_xfer_to_leafc(beg:end) = nan
     pcf%frootc_xfer_to_frootc(beg:end) = nan
     pcf%livestemc_xfer_to_livestemc(beg:end) = nan
@@ -2283,17 +2079,14 @@ contains
     pcf%froot_mr(beg:end) = nan
     pcf%livestem_mr(beg:end) = nan
     pcf%livecroot_mr(beg:end) = nan
-    pcf%grain_mr(beg:end) = nan
     pcf%leaf_curmr(beg:end) = nan
     pcf%froot_curmr(beg:end) = nan
     pcf%livestem_curmr(beg:end) = nan
     pcf%livecroot_curmr(beg:end) = nan
-    pcf%grain_curmr(beg:end) = nan
     pcf%leaf_xsmr(beg:end) = nan
     pcf%froot_xsmr(beg:end) = nan
     pcf%livestem_xsmr(beg:end) = nan
     pcf%livecroot_xsmr(beg:end) = nan
-    pcf%grain_xsmr(beg:end) = nan
     pcf%psnsun_to_cpool(beg:end) = nan
     pcf%psnshade_to_cpool(beg:end) = nan
     pcf%cpool_to_xsmrpool(beg:end) = nan
@@ -2366,7 +2159,14 @@ contains
        pcf%transfer_grain_gr(beg:end)       = nan
        pcf%grainc_storage_to_xfer(beg:end)  = nan
     end if
-
+    if (use_cn) then
+       pcf%frootc_alloc(beg:end) = nan
+       pcf%frootc_loss(beg:end) = nan
+       pcf%leafc_alloc(beg:end) = nan
+       pcf%leafc_loss(beg:end) = nan
+       pcf%woodc_alloc(beg:end) = nan
+       pcf%woodc_loss(beg:end) = nan
+    end if
 
   end subroutine init_pft_cflux_type
 
@@ -2432,53 +2232,28 @@ contains
     allocate(pnf%hrv_deadstemn_to_prod100n(beg:end))       
     allocate(pnf%hrv_livecrootn_to_litter(beg:end))        
     allocate(pnf%hrv_deadcrootn_to_litter(beg:end))        
-    allocate(pnf%hrv_retransn_to_litter(beg:end))   
-           
-    ! fire variables changed by F. Li and S. Levis            
-   allocate(pnf%m_leafn_to_fire(beg:end))
-    allocate(pnf%m_leafn_storage_to_fire(beg:end))
-    allocate(pnf%m_leafn_xfer_to_fire(beg:end))
-    allocate(pnf%m_livestemn_to_fire(beg:end))
-    allocate(pnf%m_livestemn_storage_to_fire(beg:end))
-    allocate(pnf%m_livestemn_xfer_to_fire(beg:end))
-    allocate(pnf%m_deadstemn_to_fire(beg:end))
-    allocate(pnf%m_deadstemn_storage_to_fire(beg:end))
-    allocate(pnf%m_deadstemn_xfer_to_fire(beg:end))
+    allocate(pnf%hrv_retransn_to_litter(beg:end))              
+    allocate(pnf%m_leafn_to_fire(beg:end))
     allocate(pnf%m_frootn_to_fire(beg:end))
+    allocate(pnf%m_leafn_storage_to_fire(beg:end))
     allocate(pnf%m_frootn_storage_to_fire(beg:end))
-    allocate(pnf%m_frootn_xfer_to_fire(beg:end))
-    allocate(pnf%m_livecrootn_to_fire(beg:end))
+    allocate(pnf%m_livestemn_storage_to_fire(beg:end))
+    allocate(pnf%m_deadstemn_storage_to_fire(beg:end))
     allocate(pnf%m_livecrootn_storage_to_fire(beg:end))
-    allocate(pnf%m_livecrootn_xfer_to_fire(beg:end))
-    allocate(pnf%m_deadcrootn_to_fire(beg:end))
     allocate(pnf%m_deadcrootn_storage_to_fire(beg:end))
+    allocate(pnf%m_leafn_xfer_to_fire(beg:end))
+    allocate(pnf%m_frootn_xfer_to_fire(beg:end))
+    allocate(pnf%m_livestemn_xfer_to_fire(beg:end))
+    allocate(pnf%m_deadstemn_xfer_to_fire(beg:end))
+    allocate(pnf%m_livecrootn_xfer_to_fire(beg:end))
     allocate(pnf%m_deadcrootn_xfer_to_fire(beg:end))
-    allocate(pnf%m_retransn_to_fire(beg:end))
-
-    allocate(pnf%m_leafn_to_litter_fire(beg:end))
-    allocate(pnf%m_leafn_storage_to_litter_fire(beg:end))
-    allocate(pnf%m_leafn_xfer_to_litter_fire(beg:end))
-    allocate(pnf%m_livestemn_to_litter_fire(beg:end))
-    allocate(pnf%m_livestemn_storage_to_litter_fire(beg:end))
-    allocate(pnf%m_livestemn_xfer_to_litter_fire(beg:end))
-    allocate(pnf%m_livestemn_to_deadstemn_fire(beg:end))
+    allocate(pnf%m_livestemn_to_fire(beg:end))
+    allocate(pnf%m_deadstemn_to_fire(beg:end))
     allocate(pnf%m_deadstemn_to_litter_fire(beg:end))
-    allocate(pnf%m_deadstemn_storage_to_litter_fire(beg:end))
-    allocate(pnf%m_deadstemn_xfer_to_litter_fire(beg:end))
-    allocate(pnf%m_frootn_to_litter_fire(beg:end))
-    allocate(pnf%m_frootn_storage_to_litter_fire(beg:end))
-    allocate(pnf%m_frootn_xfer_to_litter_fire(beg:end))
-    allocate(pnf%m_livecrootn_to_litter_fire(beg:end))
-    allocate(pnf%m_livecrootn_storage_to_litter_fire(beg:end))
-    allocate(pnf%m_livecrootn_xfer_to_litter_fire(beg:end))
-    allocate(pnf%m_livecrootn_to_deadcrootn_fire(beg:end))
+    allocate(pnf%m_livecrootn_to_fire(beg:end))
+    allocate(pnf%m_deadcrootn_to_fire(beg:end))
     allocate(pnf%m_deadcrootn_to_litter_fire(beg:end))
-    allocate(pnf%m_deadcrootn_storage_to_litter_fire(beg:end))
-    allocate(pnf%m_deadcrootn_xfer_to_litter_fire(beg:end))
-    allocate(pnf%m_retransn_to_litter_fire(beg:end))
-
-
-
+    allocate(pnf%m_retransn_to_fire(beg:end))
     allocate(pnf%leafn_xfer_to_leafn(beg:end))
     allocate(pnf%frootn_xfer_to_frootn(beg:end))
     allocate(pnf%livestemn_xfer_to_livestemn(beg:end))
@@ -2487,7 +2262,6 @@ contains
     allocate(pnf%deadcrootn_xfer_to_deadcrootn(beg:end))
     allocate(pnf%leafn_to_litter(beg:end))
     allocate(pnf%leafn_to_retransn(beg:end))
-    allocate(pnf%frootn_to_retransn(beg:end))
     allocate(pnf%frootn_to_litter(beg:end))
     allocate(pnf%retransn_to_npool(beg:end))
     allocate(pnf%sminn_to_npool(beg:end))
@@ -2525,8 +2299,6 @@ contains
        allocate(pnf%npool_to_grainn(beg:end))
        allocate(pnf%npool_to_grainn_storage(beg:end))
        allocate(pnf%grainn_storage_to_xfer(beg:end))
-       allocate(pnf%fert(beg:end))
-       allocate(pnf%soyfixn(beg:end))
     end if
 
     pnf%m_leafn_to_litter(beg:end) = nan
@@ -2567,53 +2339,28 @@ contains
     pnf%hrv_deadstemn_to_prod100n(beg:end) = nan       
     pnf%hrv_livecrootn_to_litter(beg:end) = nan        
     pnf%hrv_deadcrootn_to_litter(beg:end) = nan        
-    pnf%hrv_retransn_to_litter(beg:end) = nan   
-        
-    ! fire varibles changed by F. Li and S. Levis         
-   pnf%m_leafn_to_fire(beg:end) = nan
-    pnf%m_leafn_storage_to_fire(beg:end) = nan
-    pnf%m_leafn_xfer_to_fire(beg:end) = nan
-    pnf%m_livestemn_to_fire(beg:end) = nan
-    pnf%m_livestemn_storage_to_fire(beg:end) = nan
-    pnf%m_livestemn_xfer_to_fire(beg:end) = nan
-    pnf%m_deadstemn_to_fire(beg:end) = nan
-    pnf%m_deadstemn_storage_to_fire(beg:end) = nan
-    pnf%m_deadstemn_xfer_to_fire(beg:end) = nan
+    pnf%hrv_retransn_to_litter(beg:end) = nan           
+    pnf%m_leafn_to_fire(beg:end) = nan
     pnf%m_frootn_to_fire(beg:end) = nan
+    pnf%m_leafn_storage_to_fire(beg:end) = nan
     pnf%m_frootn_storage_to_fire(beg:end) = nan
-    pnf%m_frootn_xfer_to_fire(beg:end) = nan
-    pnf%m_livestemn_to_fire(beg:end) = nan
+    pnf%m_livestemn_storage_to_fire(beg:end) = nan
+    pnf%m_deadstemn_storage_to_fire(beg:end) = nan
     pnf%m_livecrootn_storage_to_fire(beg:end) = nan
-    pnf%m_livecrootn_xfer_to_fire(beg:end) = nan
-    pnf%m_deadcrootn_to_fire(beg:end) = nan
     pnf%m_deadcrootn_storage_to_fire(beg:end) = nan
+    pnf%m_leafn_xfer_to_fire(beg:end) = nan
+    pnf%m_frootn_xfer_to_fire(beg:end) = nan
+    pnf%m_livestemn_xfer_to_fire(beg:end) = nan
+    pnf%m_deadstemn_xfer_to_fire(beg:end) = nan
+    pnf%m_livecrootn_xfer_to_fire(beg:end) = nan
     pnf%m_deadcrootn_xfer_to_fire(beg:end) = nan
-    pnf%m_retransn_to_fire(beg:end) = nan
-
-    pnf%m_leafn_to_litter_fire(beg:end) = nan
-    pnf%m_leafn_storage_to_litter_fire(beg:end) = nan
-    pnf%m_leafn_xfer_to_litter_fire(beg:end) = nan
-    pnf%m_livestemn_to_litter_fire(beg:end) = nan
-    pnf%m_livestemn_storage_to_litter_fire(beg:end) = nan
-    pnf%m_livestemn_xfer_to_litter_fire(beg:end) = nan
-    pnf%m_livestemn_to_deadstemn_fire(beg:end) = nan
+    pnf%m_livestemn_to_fire(beg:end) = nan
+    pnf%m_deadstemn_to_fire(beg:end) = nan
     pnf%m_deadstemn_to_litter_fire(beg:end) = nan
-    pnf%m_deadstemn_storage_to_litter_fire(beg:end) = nan
-    pnf%m_deadstemn_xfer_to_litter_fire(beg:end) = nan
-    pnf%m_frootn_to_litter_fire(beg:end) = nan
-    pnf%m_frootn_storage_to_litter_fire(beg:end) = nan
-    pnf%m_frootn_xfer_to_litter_fire(beg:end) = nan
-    pnf%m_livecrootn_to_litter_fire(beg:end) = nan
-    pnf%m_livecrootn_storage_to_litter_fire(beg:end) = nan
-    pnf%m_livecrootn_xfer_to_litter_fire(beg:end) = nan
-    pnf%m_livecrootn_to_deadcrootn_fire(beg:end) = nan
+    pnf%m_livecrootn_to_fire(beg:end) = nan
+    pnf%m_deadcrootn_to_fire(beg:end) = nan
     pnf%m_deadcrootn_to_litter_fire(beg:end) = nan
-    pnf%m_deadcrootn_storage_to_litter_fire(beg:end) = nan
-    pnf%m_deadcrootn_xfer_to_litter_fire(beg:end) = nan
-    pnf%m_retransn_to_litter_fire(beg:end) = nan
-
-
-
+    pnf%m_retransn_to_fire(beg:end) = nan
     pnf%leafn_xfer_to_leafn(beg:end) = nan
     pnf%frootn_xfer_to_frootn(beg:end) = nan
     pnf%livestemn_xfer_to_livestemn(beg:end) = nan
@@ -2622,7 +2369,6 @@ contains
     pnf%deadcrootn_xfer_to_deadcrootn(beg:end) = nan
     pnf%leafn_to_litter(beg:end) = nan
     pnf%leafn_to_retransn(beg:end) = nan
-    pnf%frootn_to_retransn(beg:end) = nan
     pnf%frootn_to_litter(beg:end) = nan
     pnf%retransn_to_npool(beg:end) = nan
     pnf%sminn_to_npool(beg:end) = nan
@@ -2660,8 +2406,6 @@ contains
        pnf%npool_to_grainn(beg:end)         = nan
        pnf%npool_to_grainn_storage(beg:end) = nan
        pnf%grainn_storage_to_xfer(beg:end)  = nan
-       pnf%fert(beg:end)                    = nan
-       pnf%soyfixn(beg:end)                 = nan
     end if
 
   end subroutine init_pft_nflux_type
@@ -2842,15 +2586,6 @@ contains
 
     allocate(cps%snl(beg:end))      !* cannot be averaged up
     allocate(cps%isoicol(beg:end))  !* cannot be averaged up
-   
-   !F. Li and S. Levis
-    allocate(cps%gdp_lf(beg:end))  
-    allocate(cps%peatf_lf(beg:end))  
-    allocate(cps%abm_lf(beg:end))  
-    allocate(cps%lgdp_col(beg:end))  
-    allocate(cps%lgdp1_col(beg:end))
-    allocate(cps%lpop_col(beg:end))  
-
     allocate(cps%bsw(beg:end,nlevgrnd))
     allocate(cps%watsat(beg:end,nlevgrnd))
     allocate(cps%watfc(beg:end,nlevgrnd))
@@ -2870,7 +2605,6 @@ contains
     allocate(cps%mss_frc_cly_vld(beg:end))
     allocate(cps%mbl_bsn_fct(beg:end))
     allocate(cps%do_capsnow(beg:end))
-    allocate(cps%snow_depth(beg:end))
     allocate(cps%snowdp(beg:end))
     allocate(cps%frac_sno (beg:end))
     allocate(cps%zi(beg:end,-nlevsno+0:nlevgrnd))
@@ -2892,43 +2626,25 @@ contains
     allocate(cps%rootfr_road_perv(beg:end,nlevgrnd))
     allocate(cps%rootr_road_perv(beg:end,nlevgrnd))
     allocate(cps%wf(beg:end))
-    allocate(cps%wf2(beg:end))
 !   allocate(cps%xirrig(beg:end))
     allocate(cps%max_dayl(beg:end))
+    allocate(cps%bsw2(beg:end,nlevgrnd))
+    allocate(cps%psisat(beg:end,nlevgrnd))
+    allocate(cps%vwcsat(beg:end,nlevgrnd))
     allocate(cps%soilpsi(beg:end,nlevgrnd))
     allocate(cps%decl(beg:end))
     allocate(cps%coszen(beg:end))
-    allocate(cps%bd(beg:end,nlevgrnd))
     allocate(cps%fpi(beg:end))
-    allocate(cps%fpi_vr(beg:end,1:nlevdecomp_full))
     allocate(cps%fpg(beg:end))
     allocate(cps%annsum_counter(beg:end))
     allocate(cps%cannsum_npp(beg:end))
-    allocate(cps%col_lag_npp(beg:end))
     allocate(cps%cannavg_t2m(beg:end))
-    
-
-    ! fire-related variables changed by F. Li and S. Levis
-    allocate(cps%nfire(beg:end))
+    allocate(cps%me(beg:end))
+    allocate(cps%fire_prob(beg:end))
+    allocate(cps%mean_fire_prob(beg:end))
+    allocate(cps%fireseasonl(beg:end))
     allocate(cps%farea_burned(beg:end))
-    allocate(cps%fsr_col(beg:end))
-    allocate(cps%fd_col(beg:end))
-    allocate(cps%cropf_col(beg:end))
-    allocate(cps%prec10_col(beg:end))
-    allocate(cps%prec60_col(beg:end))
-    allocate(cps%lfc(beg:end))
-    allocate(cps%lfc2(beg:end))
-    allocate(cps%trotr1_col(beg:end))
-    allocate(cps%trotr2_col(beg:end))
-    allocate(cps%dtrotr_col(beg:end))
-    allocate(cps%baf_crop(beg:end))
-    allocate(cps%baf_peatf(beg:end))
-    allocate(cps%fbac(beg:end))
-    allocate(cps%fbac1(beg:end))
-    allocate(cps%btran_col(beg:end))
-    allocate(cps%wtlf(beg:end))
-    allocate(cps%lfwt(beg:end))
-
+    allocate(cps%ann_farea_burned(beg:end))
     allocate(cps%albsnd_hst(beg:end,numrad))
     allocate(cps%albsni_hst(beg:end,numrad))
     allocate(cps%albsod(beg:end,numrad))
@@ -2976,49 +2692,12 @@ contains
     allocate(cps%albgri_dst(beg:end,numrad))
     allocate(cps%dTdz_top(beg:end))
     allocate(cps%snot_top(beg:end))
-! New variables for "S" Lakes
-    allocate(cps%ws(beg:end))
-    allocate(cps%ks(beg:end))
-    allocate(cps%dz_lake(beg:end,nlevlak))
-    allocate(cps%z_lake(beg:end,nlevlak))
-    allocate(cps%savedtke1(beg:end))
-    allocate(cps%cellsand(beg:end,nlevsoi))
-    allocate(cps%cellclay(beg:end,nlevsoi))
-    allocate(cps%cellorg(beg:end,nlevsoi))
-    allocate(cps%lakedepth(beg:end))
-    allocate(cps%etal(beg:end))
-    allocate(cps%lakefetch(beg:end))
-    allocate(cps%ust_lake(beg:end))
-! End new variables for S Lakes
     allocate(cps%irrig_rate(beg:end))
     allocate(cps%n_irrig_steps_left(beg:end))
     allocate(cps%forc_pbot(beg:end))
     allocate(cps%forc_rho(beg:end))
     allocate(cps%glc_topo(beg:end))
-
-    allocate(cps%rf_decomp_cascade(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions))
-    allocate(cps%pathfrac_decomp_cascade(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions))
-    allocate(cps%nfixation_prof(beg:end,1:nlevdecomp_full))
-    allocate(cps%ndep_prof(beg:end,1:nlevdecomp_full))
-    allocate(cps%alt(beg:end))
-    allocate(cps%altmax(beg:end))
-    allocate(cps%altmax_lastyear(beg:end))
-    allocate(cps%alt_indx(beg:end))
-    allocate(cps%altmax_indx(beg:end))
-    allocate(cps%altmax_lastyear_indx(beg:end))
-    allocate(cps%som_adv_coef(beg:end,1:nlevdecomp_full))
-    allocate(cps%som_diffus_coef(beg:end,1:nlevdecomp_full))
-
     cps%isoicol(beg:end) = huge(1)
-
-    !F. Li and S. Levis
-    cps%gdp_lf(beg:end) = nan
-    cps%peatf_lf(beg:end) = nan
-    cps%abm_lf(beg:end) = 13 
-    cps%lgdp_col(beg:end) = nan
-    cps%lgdp1_col(beg:end) = nan
-    cps%lpop_col(beg:end) = nan
-
     cps%bsw(beg:end,1:nlevgrnd) = nan
     cps%watsat(beg:end,1:nlevgrnd) = nan
     cps%watfc(beg:end,1:nlevgrnd) = nan
@@ -3038,7 +2717,6 @@ contains
     cps%mss_frc_cly_vld(beg:end) = nan
     cps%mbl_bsn_fct(beg:end) = nan
     cps%do_capsnow (beg:end)= .false.
-    cps%snow_depth(beg:end) = nan
     cps%snowdp(beg:end) = nan
     cps%frac_sno(beg:end) = nan
     cps%zi(beg:end,-nlevsno+0:nlevgrnd) = nan
@@ -3057,48 +2735,31 @@ contains
     cps%albgrd(beg:end,:numrad) = nan
     cps%albgri(beg:end,:numrad) = nan
     cps%rootr_column(beg:end,1:nlevgrnd) = spval
-    cps%rootfr_road_perv(beg:end,1:nlevgrnd) = nan
-    cps%rootr_road_perv(beg:end,1:nlevgrnd) = nan
+    cps%rootfr_road_perv(beg:end,1:nlevurb) = nan
+    cps%rootr_road_perv(beg:end,1:nlevurb) = nan
     cps%wf(beg:end) = nan
 !   cps%xirrig(beg:end) = 0._r8
+    cps%bsw2(beg:end,1:nlevgrnd) = nan
+    cps%psisat(beg:end,1:nlevgrnd) = nan
+    cps%vwcsat(beg:end,1:nlevgrnd) = nan
     cps%soilpsi(beg:end,1:nlevgrnd) = spval
     cps%decl(beg:end) = nan
     cps%coszen(beg:end) = nan
-    cps%bd(beg:end,1:nlevgrnd) = spval
     cps%fpi(beg:end) = nan
-    cps%fpi_vr(beg:end,1:nlevdecomp_full) = nan
     cps%fpg(beg:end) = nan
     cps%annsum_counter(beg:end) = nan
     cps%cannsum_npp(beg:end) = nan
-    cps%col_lag_npp(beg:end) = spval
     cps%cannavg_t2m(beg:end) = nan
-
-
-    ! fire-related varibles changed by F. Li and S. Levis
-    cps%nfire(beg:end) = spval
+    cps%me(beg:end) = nan
+    cps%fire_prob(beg:end) = nan
+    cps%mean_fire_prob(beg:end) = nan
+    cps%fireseasonl(beg:end) = nan
     cps%farea_burned(beg:end) = nan
-    cps%btran_col(beg:end) = nan
-    cps%wtlf(beg:end) = nan
-    cps%lfwt(beg:end) = nan
-    cps%fsr_col(beg:end) = nan
-    cps%fd_col(beg:end) = nan
-    cps%cropf_col(beg:end) = nan
-    cps%baf_crop(beg:end) = nan
-    cps%baf_peatf(beg:end) = nan
-    cps%fbac(beg:end) = nan
-    cps%fbac1(beg:end) = nan
-    cps%trotr1_col(beg:end) = 0._r8
-    cps%trotr2_col(beg:end) = 0._r8
-    cps%dtrotr_col(beg:end) = 0._r8
-    cps%prec10_col(beg:end) = nan
-    cps%prec60_col(beg:end) = nan
-    cps%lfc(beg:end) = spval
-    cps%lfc2(beg:end) = 0._r8
-
+    cps%ann_farea_burned(beg:end) = nan
     cps%albsnd_hst(beg:end,:numrad) = spval
     cps%albsni_hst(beg:end,:numrad) = spval
-    cps%albsod(beg:end,:numrad)     = spval
-    cps%albsoi(beg:end,:numrad)     = spval
+    cps%albsod(beg:end,:numrad) = nan
+    cps%albsoi(beg:end,:numrad) = nan
     cps%flx_absdv(beg:end,-nlevsno+1:1) = spval
     cps%flx_absdn(beg:end,-nlevsno+1:1) = spval
     cps%flx_absiv(beg:end,-nlevsno+1:1) = spval
@@ -3142,60 +2803,11 @@ contains
     cps%albgri_dst(beg:end,:numrad) = nan
     cps%dTdz_top(beg:end) = nan
     cps%snot_top(beg:end) = nan
-! New variables for "S" Lakes
-    cps%ws(beg:end) = nan
-    cps%ks(beg:end) = nan
-    cps%dz_lake(beg:end,1:nlevlak) = nan
-    cps%z_lake(beg:end,1:nlevlak) = nan
-    cps%savedtke1(beg:end) = spval  ! Initialize to spval so that c->g averaging will be done properly
-    cps%cellsand(beg:end,1:nlevsoi) = nan
-    cps%cellclay(beg:end,1:nlevsoi) = nan
-    cps%cellorg(beg:end,1:nlevsoi) = nan
-    cps%lakedepth(beg:end) = spval  ! Initialize to spval so that it can be a placeholder
-                                    ! for future file input
-    cps%etal(beg:end) = nan
-    cps%lakefetch(beg:end) = nan
-    cps%ust_lake(beg:end) = spval   ! Initial to spval to detect input from restart file if not arbinit
-! End new variables for S Lakes
-
     cps%irrig_rate(beg:end) = nan
     cps%n_irrig_steps_left(beg:end) = 0
     cps%forc_pbot(beg:end) = nan
     cps%forc_rho(beg:end) = nan
     cps%glc_topo(beg:end) = nan
-
-    cps%rf_decomp_cascade(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions) = nan
-    cps%pathfrac_decomp_cascade(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions) = nan
-    cps%nfixation_prof(beg:end,1:nlevdecomp_full) = spval
-    cps%ndep_prof(beg:end,1:nlevdecomp_full) = spval
-    cps%alt(beg:end) = spval
-    cps%altmax(beg:end) = spval
-    cps%altmax_lastyear(beg:end) = spval
-    cps%alt_indx(beg:end) = huge(1)
-    cps%altmax_indx(beg:end) = huge(1)
-    cps%altmax_lastyear_indx(beg:end) = huge(1)
-    cps%som_adv_coef(beg:end,1:nlevdecomp_full) = spval
-    cps%som_diffus_coef(beg:end,1:nlevdecomp_full) = spval
-
-    allocate(cps%frac_sno_eff(beg:end))
-    allocate(cps%topo_std(beg:end))
-    allocate(cps%topo_ndx(beg:end))
-    allocate(cps%topo_slope(beg:end))
-    allocate(cps%hksat_min(beg:end,nlevgrnd))
-    allocate(cps%frac_h2osfc(beg:end))
-    allocate(cps%micro_sigma(beg:end))
-    allocate(cps%h2osfc_thresh(beg:end))
-    allocate(cps%n_melt(beg:end))
-
-    cps%frac_sno_eff(beg:end) = spval
-    cps%topo_std(beg:end) = nan
-    cps%topo_ndx(beg:end) = nan
-    cps%topo_slope(beg:end) = nan
-    cps%hksat_min(beg:end,1:nlevgrnd) = nan
-    cps%frac_h2osfc(beg:end) = spval
-    cps%micro_sigma(beg:end) = nan
-    cps%h2osfc_thresh(beg:end) = nan
-    cps%n_melt(beg:end) = nan
 
   end subroutine init_column_pstate_type
 
@@ -3228,7 +2840,6 @@ contains
     allocate(ces%dt_grnd(beg:end))
     allocate(ces%t_soisno(beg:end,-nlevsno+1:nlevgrnd))
     allocate(ces%t_soi_10cm(beg:end))
-    allocate(ces%tsoi17(beg:end))
     allocate(ces%t_lake(beg:end,1:nlevlak))
     allocate(ces%tssbef(beg:end,-nlevsno+1:nlevgrnd))
     allocate(ces%thv(beg:end))
@@ -3243,7 +2854,6 @@ contains
     ces%dt_grnd(beg:end)   = nan
     ces%t_soisno(beg:end,-nlevsno+1:nlevgrnd) = spval
     ces%t_soi_10cm(beg:end) = spval
-    ces%tsoi17(beg:end) = spval
     ces%t_lake(beg:end,1:nlevlak)            = nan
     ces%tssbef(beg:end,-nlevsno+1:nlevgrnd)   = nan
     ces%thv(beg:end)       = nan
@@ -3252,11 +2862,6 @@ contains
     ces%forc_t(beg:end) = nan
     ces%forc_th(beg:end) = nan
 
-    allocate(ces%t_h2osfc(beg:end))
-    allocate(ces%t_h2osfc_bef(beg:end))
-
-    ces%t_h2osfc(beg:end) = spval
-    ces%t_h2osfc_bef(beg:end)   = nan
   end subroutine init_column_estate_type
 
 !------------------------------------------------------------------------
@@ -3302,15 +2907,11 @@ contains
     allocate(cws%zwt(beg:end))
     allocate(cws%fcov(beg:end))
     allocate(cws%fsat(beg:end))
-!New variable for methane code
     allocate(cws%wa(beg:end))
+    allocate(cws%wt(beg:end))
     allocate(cws%qcharge(beg:end))
     allocate(cws%smp_l(beg:end,1:nlevgrnd))
     allocate(cws%hk_l(beg:end,1:nlevgrnd))
-! New variables for "S" lakes
-    allocate(cws%lake_icefrac(beg:end,1:nlevlak))
-    allocate(cws%lake_icethick(beg:end))
-! End new variables for S lakes
     allocate(cws%forc_q(beg:end))
 
     cws%h2osno(beg:end) = nan
@@ -3332,35 +2933,12 @@ contains
     cws%zwt(beg:end) = nan
     cws%fcov(beg:end) = nan
     cws%fsat(beg:end) = nan
-    cws%wa(beg:end) = spval
+    cws%wa(beg:end) = nan
+    cws%wt(beg:end) = nan
     cws%qcharge(beg:end) = nan
     cws%smp_l(beg:end,1:nlevgrnd) = spval
     cws%hk_l(beg:end,1:nlevgrnd) = spval
-! New variables for "S" lakes
-    cws%lake_icefrac(beg:end,1:nlevlak) = spval  ! Initialize to spval for detection of whether
-                                                 ! it has not been initialized by file input
-                                                 ! and so c->g averaging will be done properly
-    cws%lake_icethick(beg:end) = nan
-! End new variables for S lakes
     cws%forc_q(beg:end) = nan
-
-    allocate(cws%h2osfc(beg:end))
-    allocate(cws%qg_snow(beg:end))
-    allocate(cws%qg_soil(beg:end))
-    allocate(cws%qg_h2osfc(beg:end))
-    allocate(cws%frost_table(beg:end))
-    allocate(cws%zwt_perched(beg:end))
-    allocate(cws%int_snow(beg:end))
-    allocate(cws%swe_old(beg:end,-nlevsno+1:0))
-
-    cws%h2osfc(beg:end)      = spval
-    cws%qg_snow(beg:end)     = nan
-    cws%qg_soil(beg:end)     = nan
-    cws%qg_h2osfc(beg:end)   = nan
-    cws%frost_table(beg:end) = spval
-    cws%zwt_perched(beg:end) = spval
-    cws%int_snow(beg:end)    = spval
-    cws%swe_old(beg:end,-nlevsno+1:0)= nan
 
   end subroutine init_column_wstate_type
 
@@ -3375,9 +2953,6 @@ contains
 ! !DESCRIPTION:
 ! Initialize column carbon state variables
 !
-! !USES:
-    use clm_varcon, only : spval
-!
 ! !ARGUMENTS:
     implicit none
     integer, intent(in) :: beg, end
@@ -3391,52 +2966,41 @@ contains
 
     allocate(ccs%soilc(beg:end))
     allocate(ccs%cwdc(beg:end))
-    allocate(ccs%col_ctrunc(beg:end))
-    allocate(ccs%decomp_cpools_vr(beg:end,1:nlevdecomp_full,1:ndecomp_pools))
-    allocate(ccs%decomp_cpools(beg:end,1:ndecomp_pools))
-    allocate(ccs%decomp_cpools_1m(beg:end,1:ndecomp_pools))
-    allocate(ccs%col_ctrunc_vr(beg:end,1:nlevdecomp_full))
+    allocate(ccs%litr1c(beg:end))
+    allocate(ccs%litr2c(beg:end))
+    allocate(ccs%litr3c(beg:end))
+    allocate(ccs%soil1c(beg:end))
+    allocate(ccs%soil2c(beg:end))
+    allocate(ccs%soil3c(beg:end))
+    allocate(ccs%soil4c(beg:end))
     allocate(ccs%seedc(beg:end))
+    allocate(ccs%col_ctrunc(beg:end))
     allocate(ccs%prod10c(beg:end))
     allocate(ccs%prod100c(beg:end))
     allocate(ccs%totprodc(beg:end))
     allocate(ccs%totlitc(beg:end))
     allocate(ccs%totsomc(beg:end))
-    allocate(ccs%totlitc_1m(beg:end))
-    allocate(ccs%totsomc_1m(beg:end))
     allocate(ccs%totecosysc(beg:end))
     allocate(ccs%totcolc(beg:end))
 
-    !F. Li and S. Levis
-    allocate(ccs%rootc_col(beg:end))
-    allocate(ccs%totvegc_col(beg:end))
-    allocate(ccs%leafc_col(beg:end))
-    allocate(ccs%fuelc(beg:end))
-    allocate(ccs%fuelc_crop(beg:end))
-
     ccs%soilc(beg:end) = nan
     ccs%cwdc(beg:end) = nan
-    ccs%decomp_cpools_vr(beg:end,1:nlevdecomp_full,1:ndecomp_pools) = nan
-    ccs%decomp_cpools(beg:end,1:ndecomp_pools) = nan
-    ccs%decomp_cpools_1m(beg:end,1:ndecomp_pools) = nan
-    ccs%col_ctrunc(beg:end) = nan
-    ccs%col_ctrunc_vr(beg:end,1:nlevdecomp_full) = nan
+    ccs%litr1c(beg:end) = nan
+    ccs%litr2c(beg:end) = nan
+    ccs%litr3c(beg:end) = nan
+    ccs%soil1c(beg:end) = nan
+    ccs%soil2c(beg:end) = nan
+    ccs%soil3c(beg:end) = nan
+    ccs%soil4c(beg:end) = nan
     ccs%seedc(beg:end) = nan
+    ccs%col_ctrunc(beg:end) = nan
     ccs%prod10c(beg:end) = nan
     ccs%prod100c(beg:end) = nan
     ccs%totprodc(beg:end) = nan
     ccs%totlitc(beg:end) = nan
     ccs%totsomc(beg:end) = nan
-    ccs%totlitc_1m(beg:end) = nan
-    ccs%totsomc_1m(beg:end) = nan
     ccs%totecosysc(beg:end) = nan
     ccs%totcolc(beg:end) = nan
-
-    ccs%rootc_col(beg:end) = nan
-    ccs%totvegc_col(beg:end) = nan
-    ccs%leafc_col(beg:end) = nan
-    ccs%fuelc(beg:end) = spval
-    ccs%fuelc_crop(beg:end) = nan
 
   end subroutine init_column_cstate_type
 
@@ -3451,9 +3015,6 @@ contains
 ! !DESCRIPTION:
 ! Initialize column nitrogen state variables
 !
-! !USES:
-    use clm_varcon, only : spval
-!
 ! !ARGUMENTS:
     implicit none
     integer, intent(in) :: beg, end
@@ -3465,13 +3026,14 @@ contains
 !EOP
 !------------------------------------------------------------------------
 
-
-    allocate(cns%decomp_npools(beg:end,1:ndecomp_pools))
-    allocate(cns%decomp_npools_1m(beg:end,1:ndecomp_pools))
-    allocate(cns%decomp_npools_vr(beg:end,1:nlevdecomp_full,1:ndecomp_pools))
-    allocate(cns%sminn_vr(beg:end,1:nlevdecomp_full))
-    allocate(cns%col_ntrunc_vr(beg:end,1:nlevdecomp_full))
     allocate(cns%cwdn(beg:end))
+    allocate(cns%litr1n(beg:end))
+    allocate(cns%litr2n(beg:end))
+    allocate(cns%litr3n(beg:end))
+    allocate(cns%soil1n(beg:end))
+    allocate(cns%soil2n(beg:end))
+    allocate(cns%soil3n(beg:end))
+    allocate(cns%soil4n(beg:end))
     allocate(cns%sminn(beg:end))
     allocate(cns%col_ntrunc(beg:end))
     allocate(cns%seedn(beg:end))
@@ -3480,17 +3042,17 @@ contains
     allocate(cns%totprodn(beg:end))
     allocate(cns%totlitn(beg:end))
     allocate(cns%totsomn(beg:end))
-    allocate(cns%totlitn_1m(beg:end))
-    allocate(cns%totsomn_1m(beg:end))
     allocate(cns%totecosysn(beg:end))
     allocate(cns%totcoln(beg:end))
 
-    cns%decomp_npools(beg:end,1:ndecomp_pools) = nan
-    cns%decomp_npools_1m(beg:end,1:ndecomp_pools) = nan
-    cns%decomp_npools_vr(beg:end,1:nlevdecomp_full,1:ndecomp_pools) = nan
-    cns%sminn_vr(beg:end,1:nlevdecomp_full) = nan
-    cns%col_ntrunc_vr(beg:end,1:nlevdecomp_full) = nan
     cns%cwdn(beg:end) = nan
+    cns%litr1n(beg:end) = nan
+    cns%litr2n(beg:end) = nan
+    cns%litr3n(beg:end) = nan
+    cns%soil1n(beg:end) = nan
+    cns%soil2n(beg:end) = nan
+    cns%soil3n(beg:end) = nan
+    cns%soil4n(beg:end) = nan
     cns%sminn(beg:end) = nan
     cns%col_ntrunc(beg:end) = nan
     cns%seedn(beg:end) = nan
@@ -3499,8 +3061,6 @@ contains
     cns%totprodn(beg:end) = nan
     cns%totlitn(beg:end) = nan
     cns%totsomn(beg:end) = nan
-    cns%totlitn_1m(beg:end) = nan
-    cns%totsomn_1m(beg:end) = nan
     cns%totecosysn(beg:end) = nan
     cns%totcoln(beg:end) = nan
 
@@ -3517,8 +3077,6 @@ contains
 ! !DESCRIPTION:
 ! Initialize column energy flux variables
 !
-! !USES:
-    use clm_varcon, only : spval
 ! !ARGUMENTS:
     implicit none
     integer, intent(in) :: beg, end
@@ -3535,18 +3093,16 @@ contains
     allocate(cef%eflx_snomelt_r(beg:end))
     allocate(cef%eflx_impsoil(beg:end))
     allocate(cef%eflx_fgr12(beg:end))
-    allocate(cef%eflx_fgr(beg:end, 1:nlevgrnd))
     allocate(cef%eflx_building_heat(beg:end))
     allocate(cef%eflx_urban_ac(beg:end))
     allocate(cef%eflx_urban_heat(beg:end))
     allocate(cef%eflx_bot(beg:end))
 
-    cef%eflx_snomelt(beg:end)       = spval
-    cef%eflx_snomelt_u(beg:end)       = spval
-    cef%eflx_snomelt_r(beg:end)       = spval
+    cef%eflx_snomelt(beg:end)       = nan
+    cef%eflx_snomelt_u(beg:end)       = nan
+    cef%eflx_snomelt_r(beg:end)       = nan
     cef%eflx_impsoil(beg:end)       = nan
     cef%eflx_fgr12(beg:end)         = nan
-    cef%eflx_fgr(beg:end, 1:nlevgrnd) = nan
     cef%eflx_building_heat(beg:end) = nan
     cef%eflx_urban_ac(beg:end) = nan
     cef%eflx_urban_heat(beg:end) = nan
@@ -3619,6 +3175,7 @@ contains
     allocate(cwf%glc_rofi(beg:end))
     allocate(cwf%glc_rofl(beg:end))
     allocate(cwf%qflx_floodc(beg:end))
+    allocate(cwf%qflx_snow_melt(beg:end))
 
     cwf%qflx_infl(beg:end) = nan
     cwf%qflx_surf(beg:end) = nan
@@ -3632,7 +3189,7 @@ contains
     cwf%qflx_runoff_r(beg:end) = nan
     cwf%qmelt(beg:end) = nan
     cwf%h2ocan_loss(beg:end) = nan
-    cwf%qflx_rsub_sat(beg:end) = spval
+    cwf%qflx_rsub_sat(beg:end) = nan
     cwf%flx_bc_dep_dry(beg:end) = nan
     cwf%flx_bc_dep_wet(beg:end) = nan
     cwf%flx_bc_dep_pho(beg:end) = nan
@@ -3654,25 +3211,15 @@ contains
     cwf%flx_dst_dep(beg:end) = nan
     cwf%qflx_snofrz_lyr(beg:end,-nlevsno+1:0) = spval
     cwf%qflx_snofrz_col(beg:end) = nan
-    cwf%qflx_irrig(beg:end)  = spval
+    cwf%qflx_irrig(beg:end)  = nan
     cwf%qflx_glcice(beg:end) = nan
     cwf%qflx_glcice_frz(beg:end) = nan
-    cwf%qflx_glcice_melt(beg:end) = spval
+    cwf%qflx_glcice_melt(beg:end) = nan
     cwf%glc_rofi(beg:end)    = nan
     cwf%glc_rofl(beg:end)    = nan
     cwf%qflx_floodc(beg:end) = spval
-
-    allocate(cwf%qflx_h2osfc_to_ice(beg:end))
-    allocate(cwf%qflx_h2osfc_surf(beg:end))
-    allocate(cwf%qflx_snow_h2osfc(beg:end))
-    allocate(cwf%qflx_drain_perched(beg:end))
-    allocate(cwf%qflx_snow_melt(beg:end))
-
-    cwf%qflx_h2osfc_to_ice(beg:end) = spval
-    cwf%qflx_h2osfc_surf(beg:end) = spval
-    cwf%qflx_snow_h2osfc(beg:end) = nan
-    cwf%qflx_drain_perched(beg:end) = spval
     cwf%qflx_snow_melt(beg:end) = spval
+
   end subroutine init_column_wflux_type
 
 !------------------------------------------------------------------------
@@ -3682,8 +3229,6 @@ contains
 !
 ! !INTERFACE:
   subroutine init_column_cflux_type(beg, end, ccf)
-!
-  use clm_varcon, only : spval
 !
 ! !DESCRIPTION:
 ! Initialize column carbon flux variables
@@ -3701,41 +3246,108 @@ contains
 !EOP
 !------------------------------------------------------------------------
 
+    allocate(ccf%m_leafc_to_litr1c(beg:end))
+    allocate(ccf%m_leafc_to_litr2c(beg:end))
+    allocate(ccf%m_leafc_to_litr3c(beg:end))
+    allocate(ccf%m_frootc_to_litr1c(beg:end))
+    allocate(ccf%m_frootc_to_litr2c(beg:end))
+    allocate(ccf%m_frootc_to_litr3c(beg:end))
+    allocate(ccf%m_leafc_storage_to_litr1c(beg:end))
+    allocate(ccf%m_frootc_storage_to_litr1c(beg:end))
+    allocate(ccf%m_livestemc_storage_to_litr1c(beg:end))
+    allocate(ccf%m_deadstemc_storage_to_litr1c(beg:end))
+    allocate(ccf%m_livecrootc_storage_to_litr1c(beg:end))
+    allocate(ccf%m_deadcrootc_storage_to_litr1c(beg:end))
+    allocate(ccf%m_leafc_xfer_to_litr1c(beg:end))
+    allocate(ccf%m_frootc_xfer_to_litr1c(beg:end))
+    allocate(ccf%m_livestemc_xfer_to_litr1c(beg:end))
+    allocate(ccf%m_deadstemc_xfer_to_litr1c(beg:end))
+    allocate(ccf%m_livecrootc_xfer_to_litr1c(beg:end))
+    allocate(ccf%m_deadcrootc_xfer_to_litr1c(beg:end))
+    allocate(ccf%m_livestemc_to_cwdc(beg:end))
+    allocate(ccf%m_deadstemc_to_cwdc(beg:end))
+    allocate(ccf%m_livecrootc_to_cwdc(beg:end))
+    allocate(ccf%m_deadcrootc_to_cwdc(beg:end))
+    allocate(ccf%m_gresp_storage_to_litr1c(beg:end))
+    allocate(ccf%m_gresp_xfer_to_litr1c(beg:end))
+    allocate(ccf%m_deadstemc_to_cwdc_fire(beg:end))
+    allocate(ccf%m_deadcrootc_to_cwdc_fire(beg:end))
+    allocate(ccf%hrv_leafc_to_litr1c(beg:end))             
+    allocate(ccf%hrv_leafc_to_litr2c(beg:end))             
+    allocate(ccf%hrv_leafc_to_litr3c(beg:end))             
+    allocate(ccf%hrv_frootc_to_litr1c(beg:end))            
+    allocate(ccf%hrv_frootc_to_litr2c(beg:end))            
+    allocate(ccf%hrv_frootc_to_litr3c(beg:end))            
+    allocate(ccf%hrv_livestemc_to_cwdc(beg:end))           
     allocate(ccf%hrv_deadstemc_to_prod10c(beg:end))        
     allocate(ccf%hrv_deadstemc_to_prod100c(beg:end))       
-    allocate(ccf%m_decomp_cpools_to_fire_vr(beg:end,1:nlevdecomp_full,1:ndecomp_pools))
-    allocate(ccf%m_decomp_cpools_to_fire(beg:end,1:ndecomp_pools))
-    allocate(ccf%decomp_cascade_hr_vr(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions))
-    allocate(ccf%decomp_cascade_hr(beg:end,1:ndecomp_cascade_transitions))
-    allocate(ccf%decomp_cascade_ctransfer_vr(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions))
-    allocate(ccf%decomp_cascade_ctransfer(beg:end,1:ndecomp_cascade_transitions))
-    allocate(ccf%decomp_cpools_sourcesink(beg:end,1:nlevdecomp_full,1:ndecomp_pools))
-    allocate(ccf%decomp_k(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions))
-    allocate(ccf%t_scalar(beg:end,1:nlevdecomp_full))
-    allocate(ccf%w_scalar(beg:end,1:nlevdecomp_full))
-    allocate(ccf%hr_vr(beg:end,1:nlevdecomp_full))
-    allocate(ccf%o_scalar(beg:end,1:nlevdecomp_full))
-    allocate(ccf%som_c_leached(beg:end))
-    allocate(ccf%decomp_cpools_leached(beg:end,1:ndecomp_pools))
-    allocate(ccf%decomp_cpools_transport_tendency(beg:end,1:nlevdecomp_full,1:ndecomp_pools))
-
-    allocate(ccf%phenology_c_to_litr_met_c(beg:end, 1:nlevdecomp_full))
-    allocate(ccf%phenology_c_to_litr_cel_c(beg:end, 1:nlevdecomp_full))
-    allocate(ccf%phenology_c_to_litr_lig_c(beg:end, 1:nlevdecomp_full))
-    allocate(ccf%gap_mortality_c_to_litr_met_c(beg:end, 1:nlevdecomp_full))
-    allocate(ccf%gap_mortality_c_to_litr_cel_c(beg:end, 1:nlevdecomp_full))
-    allocate(ccf%gap_mortality_c_to_litr_lig_c(beg:end, 1:nlevdecomp_full))
-    allocate(ccf%gap_mortality_c_to_cwdc(beg:end, 1:nlevdecomp_full))
-    allocate(ccf%fire_mortality_c_to_cwdc(beg:end, 1:nlevdecomp_full))
-    allocate(ccf%m_c_to_litr_met_fire(beg:end,1:nlevdecomp_full))
-    allocate(ccf%m_c_to_litr_cel_fire(beg:end,1:nlevdecomp_full))
-    allocate(ccf%m_c_to_litr_lig_fire(beg:end,1:nlevdecomp_full))
-    allocate(ccf%harvest_c_to_litr_met_c(beg:end, 1:nlevdecomp_full))
-    allocate(ccf%harvest_c_to_litr_cel_c(beg:end, 1:nlevdecomp_full))
-    allocate(ccf%harvest_c_to_litr_lig_c(beg:end, 1:nlevdecomp_full))
-    allocate(ccf%harvest_c_to_cwdc(beg:end, 1:nlevdecomp_full))
-
-
+    allocate(ccf%hrv_livecrootc_to_cwdc(beg:end))          
+    allocate(ccf%hrv_deadcrootc_to_cwdc(beg:end))          
+    allocate(ccf%hrv_leafc_storage_to_litr1c(beg:end))     
+    allocate(ccf%hrv_frootc_storage_to_litr1c(beg:end))    
+    allocate(ccf%hrv_livestemc_storage_to_litr1c(beg:end)) 
+    allocate(ccf%hrv_deadstemc_storage_to_litr1c(beg:end)) 
+    allocate(ccf%hrv_livecrootc_storage_to_litr1c(beg:end))
+    allocate(ccf%hrv_deadcrootc_storage_to_litr1c(beg:end))
+    allocate(ccf%hrv_gresp_storage_to_litr1c(beg:end))     
+    allocate(ccf%hrv_leafc_xfer_to_litr1c(beg:end))        
+    allocate(ccf%hrv_frootc_xfer_to_litr1c(beg:end))       
+    allocate(ccf%hrv_livestemc_xfer_to_litr1c(beg:end))    
+    allocate(ccf%hrv_deadstemc_xfer_to_litr1c(beg:end))    
+    allocate(ccf%hrv_livecrootc_xfer_to_litr1c(beg:end))   
+    allocate(ccf%hrv_deadcrootc_xfer_to_litr1c(beg:end))   
+    allocate(ccf%hrv_gresp_xfer_to_litr1c(beg:end))        
+    allocate(ccf%m_litr1c_to_fire(beg:end))
+    allocate(ccf%m_litr2c_to_fire(beg:end))
+    allocate(ccf%m_litr3c_to_fire(beg:end))
+    allocate(ccf%m_cwdc_to_fire(beg:end))
+    if ( crop_prog )then
+       allocate(ccf%grainc_to_litr1c(beg:end))
+       allocate(ccf%grainc_to_litr2c(beg:end))
+       allocate(ccf%grainc_to_litr3c(beg:end))
+       allocate(ccf%livestemc_to_litr1c(beg:end))
+       allocate(ccf%livestemc_to_litr2c(beg:end))
+       allocate(ccf%livestemc_to_litr3c(beg:end))
+    end if
+    allocate(ccf%leafc_to_litr1c(beg:end))
+    allocate(ccf%leafc_to_litr2c(beg:end))
+    allocate(ccf%leafc_to_litr3c(beg:end))
+    allocate(ccf%frootc_to_litr1c(beg:end))
+    allocate(ccf%frootc_to_litr2c(beg:end))
+    allocate(ccf%frootc_to_litr3c(beg:end))
+    allocate(ccf%cwdc_to_litr2c(beg:end))
+    allocate(ccf%cwdc_to_litr3c(beg:end))
+    allocate(ccf%litr1_hr(beg:end))
+    allocate(ccf%litr1c_to_soil1c(beg:end))
+    allocate(ccf%litr2_hr(beg:end))
+    allocate(ccf%litr2c_to_soil2c(beg:end))
+    allocate(ccf%litr3_hr(beg:end))
+    allocate(ccf%litr3c_to_soil3c(beg:end))
+    allocate(ccf%soil1_hr(beg:end))
+    allocate(ccf%soil1c_to_soil2c(beg:end))
+    allocate(ccf%soil2_hr(beg:end))
+    allocate(ccf%soil2c_to_soil3c(beg:end))
+    allocate(ccf%soil3_hr(beg:end))
+    allocate(ccf%soil3c_to_soil4c(beg:end))
+    allocate(ccf%soil4_hr(beg:end))
+    if (use_cn) then
+       allocate(ccf%dwt_seedc_to_leaf(beg:end))
+       allocate(ccf%dwt_seedc_to_deadstem(beg:end))
+       allocate(ccf%dwt_conv_cflux(beg:end))
+       allocate(ccf%dwt_prod10c_gain(beg:end))
+       allocate(ccf%dwt_prod100c_gain(beg:end))
+       allocate(ccf%dwt_frootc_to_litr1c(beg:end))
+       allocate(ccf%dwt_frootc_to_litr2c(beg:end))
+       allocate(ccf%dwt_frootc_to_litr3c(beg:end))
+       allocate(ccf%dwt_livecrootc_to_cwdc(beg:end))
+       allocate(ccf%dwt_deadcrootc_to_cwdc(beg:end))
+       allocate(ccf%dwt_closs(beg:end))
+       allocate(ccf%landuseflux(beg:end))
+       allocate(ccf%landuptake(beg:end))
+       allocate(ccf%prod10c_loss(beg:end))
+       allocate(ccf%prod100c_loss(beg:end))
+       allocate(ccf%product_closs(beg:end))
+    end if
     allocate(ccf%lithr(beg:end))
     allocate(ccf%somhr(beg:end))
     allocate(ccf%hr(beg:end))
@@ -3751,42 +3363,114 @@ contains
     allocate(ccf%col_coutputs(beg:end))
     allocate(ccf%col_fire_closs(beg:end))
 
+    if (use_cn) then
+       allocate(ccf%cwdc_hr(beg:end))
+       allocate(ccf%cwdc_loss(beg:end))
+       allocate(ccf%litterc_loss(beg:end))
+    end if
 
-    ccf%m_c_to_litr_met_fire(beg:end,1:nlevdecomp_full)             = nan
-    ccf%m_c_to_litr_cel_fire(beg:end,1:nlevdecomp_full)             = nan
-    ccf%m_c_to_litr_lig_fire(beg:end,1:nlevdecomp_full)             = nan
+    ccf%m_leafc_to_litr1c(beg:end)                = nan
+    ccf%m_leafc_to_litr2c(beg:end)                = nan
+    ccf%m_leafc_to_litr3c(beg:end)                = nan
+    ccf%m_frootc_to_litr1c(beg:end)               = nan
+    ccf%m_frootc_to_litr2c(beg:end)               = nan
+    ccf%m_frootc_to_litr3c(beg:end)               = nan
+    ccf%m_leafc_storage_to_litr1c(beg:end)        = nan
+    ccf%m_frootc_storage_to_litr1c(beg:end)       = nan
+    ccf%m_livestemc_storage_to_litr1c(beg:end)    = nan
+    ccf%m_deadstemc_storage_to_litr1c(beg:end)    = nan
+    ccf%m_livecrootc_storage_to_litr1c(beg:end)   = nan
+    ccf%m_deadcrootc_storage_to_litr1c(beg:end)   = nan
+    ccf%m_leafc_xfer_to_litr1c(beg:end)           = nan
+    ccf%m_frootc_xfer_to_litr1c(beg:end)          = nan
+    ccf%m_livestemc_xfer_to_litr1c(beg:end)       = nan
+    ccf%m_deadstemc_xfer_to_litr1c(beg:end)       = nan
+    ccf%m_livecrootc_xfer_to_litr1c(beg:end)      = nan
+    ccf%m_deadcrootc_xfer_to_litr1c(beg:end)      = nan
+    ccf%m_livestemc_to_cwdc(beg:end)              = nan
+    ccf%m_deadstemc_to_cwdc(beg:end)              = nan
+    ccf%m_livecrootc_to_cwdc(beg:end)             = nan
+    ccf%m_deadcrootc_to_cwdc(beg:end)             = nan
+    ccf%m_gresp_storage_to_litr1c(beg:end)        = nan
+    ccf%m_gresp_xfer_to_litr1c(beg:end)           = nan
+    ccf%m_deadstemc_to_cwdc_fire(beg:end)         = nan
+    ccf%m_deadcrootc_to_cwdc_fire(beg:end)        = nan
+    ccf%hrv_leafc_to_litr1c(beg:end)              = nan             
+    ccf%hrv_leafc_to_litr2c(beg:end)              = nan             
+    ccf%hrv_leafc_to_litr3c(beg:end)              = nan             
+    ccf%hrv_frootc_to_litr1c(beg:end)             = nan            
+    ccf%hrv_frootc_to_litr2c(beg:end)             = nan            
+    ccf%hrv_frootc_to_litr3c(beg:end)             = nan            
+    ccf%hrv_livestemc_to_cwdc(beg:end)            = nan           
     ccf%hrv_deadstemc_to_prod10c(beg:end)         = nan        
     ccf%hrv_deadstemc_to_prod100c(beg:end)        = nan       
-    ccf%m_decomp_cpools_to_fire_vr(beg:end,1:nlevdecomp_full,1:ndecomp_pools)                = nan
-    ccf%m_decomp_cpools_to_fire(beg:end,1:ndecomp_pools)                                     = nan
-    ccf%decomp_cascade_hr_vr(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions)        = nan
-    ccf%decomp_cascade_hr(beg:end,1:ndecomp_cascade_transitions)                             = nan
-    ccf%decomp_cascade_ctransfer_vr(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions) = nan
-    ccf%decomp_cascade_ctransfer(beg:end,1:ndecomp_cascade_transitions)                      = nan
-    ccf%decomp_cpools_sourcesink(beg:end,1:nlevdecomp_full,1:ndecomp_pools)                  = nan
-    ccf%decomp_k(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions)                    = spval
-! Initialize these four below to spval to allow history to not average over inactive points.
-    ccf%t_scalar(beg:end,1:nlevdecomp_full)                         = spval
-    ccf%w_scalar(beg:end,1:nlevdecomp_full)                         = spval
-    ccf%hr_vr(beg:end, 1:nlevdecomp_full)                           = spval
-    ccf%o_scalar(beg:end, 1:nlevdecomp_full)                        = spval
-    ccf%som_c_leached(beg:end)                                                      = nan 
-    ccf%decomp_cpools_leached(beg:end,1:ndecomp_pools)                              = nan
-    ccf%decomp_cpools_transport_tendency(beg:end,1:nlevdecomp_full,1:ndecomp_pools) = nan
-
-    ccf%phenology_c_to_litr_met_c(beg:end, 1:nlevdecomp_full)                     = nan
-    ccf%phenology_c_to_litr_cel_c(beg:end, 1:nlevdecomp_full)                     = nan
-    ccf%phenology_c_to_litr_lig_c(beg:end, 1:nlevdecomp_full)                     = nan
-    ccf%gap_mortality_c_to_litr_met_c(beg:end, 1:nlevdecomp_full)                 = nan
-    ccf%gap_mortality_c_to_litr_cel_c(beg:end, 1:nlevdecomp_full)                 = nan
-    ccf%gap_mortality_c_to_litr_lig_c(beg:end, 1:nlevdecomp_full)                 = nan
-    ccf%gap_mortality_c_to_cwdc(beg:end, 1:nlevdecomp_full)                       = nan
-    ccf%fire_mortality_c_to_cwdc(beg:end, 1:nlevdecomp_full)                      = nan
-    ccf%harvest_c_to_litr_met_c(beg:end, 1:nlevdecomp_full)                       = nan
-    ccf%harvest_c_to_litr_cel_c(beg:end, 1:nlevdecomp_full)                       = nan
-    ccf%harvest_c_to_litr_lig_c(beg:end, 1:nlevdecomp_full)                       = nan
-    ccf%harvest_c_to_cwdc(beg:end, 1:nlevdecomp_full)                             = nan
-
+    ccf%hrv_livecrootc_to_cwdc(beg:end)           = nan          
+    ccf%hrv_deadcrootc_to_cwdc(beg:end)           = nan          
+    ccf%hrv_leafc_storage_to_litr1c(beg:end)      = nan     
+    ccf%hrv_frootc_storage_to_litr1c(beg:end)     = nan    
+    ccf%hrv_livestemc_storage_to_litr1c(beg:end)  = nan 
+    ccf%hrv_deadstemc_storage_to_litr1c(beg:end)  = nan 
+    ccf%hrv_livecrootc_storage_to_litr1c(beg:end) = nan
+    ccf%hrv_deadcrootc_storage_to_litr1c(beg:end) = nan
+    if ( crop_prog )then
+       ccf%grainc_to_litr1c(beg:end)    = nan
+       ccf%grainc_to_litr2c(beg:end)    = nan
+       ccf%grainc_to_litr3c(beg:end)    = nan
+       ccf%livestemc_to_litr1c(beg:end) = nan
+       ccf%livestemc_to_litr2c(beg:end) = nan
+       ccf%livestemc_to_litr3c(beg:end) = nan
+    end if
+    ccf%hrv_gresp_storage_to_litr1c(beg:end)      = nan     
+    ccf%hrv_leafc_xfer_to_litr1c(beg:end)         = nan        
+    ccf%hrv_frootc_xfer_to_litr1c(beg:end)        = nan       
+    ccf%hrv_livestemc_xfer_to_litr1c(beg:end)     = nan    
+    ccf%hrv_deadstemc_xfer_to_litr1c(beg:end)     = nan    
+    ccf%hrv_livecrootc_xfer_to_litr1c(beg:end)    = nan   
+    ccf%hrv_deadcrootc_xfer_to_litr1c(beg:end)    = nan   
+    ccf%hrv_gresp_xfer_to_litr1c(beg:end)         = nan        
+    ccf%m_litr1c_to_fire(beg:end)                 = nan
+    ccf%m_litr2c_to_fire(beg:end)                 = nan
+    ccf%m_litr3c_to_fire(beg:end)                 = nan
+    ccf%m_cwdc_to_fire(beg:end)                   = nan
+    ccf%leafc_to_litr1c(beg:end)                  = nan
+    ccf%leafc_to_litr2c(beg:end)                  = nan
+    ccf%leafc_to_litr3c(beg:end)                  = nan
+    ccf%frootc_to_litr1c(beg:end)                 = nan
+    ccf%frootc_to_litr2c(beg:end)                 = nan
+    ccf%frootc_to_litr3c(beg:end)                 = nan
+    ccf%cwdc_to_litr2c(beg:end)                   = nan
+    ccf%cwdc_to_litr3c(beg:end)                   = nan
+    ccf%litr1_hr(beg:end)                         = nan
+    ccf%litr1c_to_soil1c(beg:end)                 = nan
+    ccf%litr2_hr(beg:end)                         = nan
+    ccf%litr2c_to_soil2c(beg:end)                 = nan
+    ccf%litr3_hr(beg:end)                         = nan
+    ccf%litr3c_to_soil3c(beg:end)                 = nan
+    ccf%soil1_hr(beg:end)                         = nan
+    ccf%soil1c_to_soil2c(beg:end)                 = nan
+    ccf%soil2_hr(beg:end)                         = nan
+    ccf%soil2c_to_soil3c(beg:end)                 = nan
+    ccf%soil3_hr(beg:end)                         = nan
+    ccf%soil3c_to_soil4c(beg:end)                 = nan
+    ccf%soil4_hr(beg:end)                         = nan
+    if (use_cn) then
+       ccf%dwt_seedc_to_leaf(beg:end)                = nan
+       ccf%dwt_seedc_to_deadstem(beg:end)            = nan
+       ccf%dwt_conv_cflux(beg:end)                   = nan
+       ccf%dwt_prod10c_gain(beg:end)                 = nan
+       ccf%dwt_prod100c_gain(beg:end)                = nan
+       ccf%dwt_frootc_to_litr1c(beg:end)             = nan
+       ccf%dwt_frootc_to_litr2c(beg:end)             = nan
+       ccf%dwt_frootc_to_litr3c(beg:end)             = nan
+       ccf%dwt_livecrootc_to_cwdc(beg:end)           = nan
+       ccf%dwt_deadcrootc_to_cwdc(beg:end)           = nan
+       ccf%dwt_closs(beg:end)                        = nan
+       ccf%landuseflux(beg:end)                      = nan
+       ccf%landuptake(beg:end)                       = nan
+       ccf%prod10c_loss(beg:end)                     = nan
+       ccf%prod100c_loss(beg:end)                    = nan
+       ccf%product_closs(beg:end)                    = nan
+    end if
     ccf%lithr(beg:end)                            = nan
     ccf%somhr(beg:end)                            = nan
     ccf%hr(beg:end)                               = nan
@@ -3802,15 +3486,13 @@ contains
     ccf%col_coutputs(beg:end)                     = nan
     ccf%col_fire_closs(beg:end)                   = nan
 
+    if (use_cn) then
+       ccf%cwdc_hr(beg:end)                          = nan
+       ccf%cwdc_loss(beg:end)                        = nan
+       ccf%litterc_loss(beg:end)                     = nan
+    end if
 
   end subroutine init_column_cflux_type
-
-!------------------------------------------------------------------------
-!BOP
-!
-! !IROUTINE: init_column_ch4_type
-!
-! !INTERFACE:
 
 !------------------------------------------------------------------------
 !BOP
@@ -3820,7 +3502,6 @@ contains
 ! !INTERFACE:
   subroutine init_column_nflux_type(beg, end, cnf)
 !
-  use clm_varcon, only : spval
 ! !DESCRIPTION:
 ! Initialize column nitrogen flux variables
 !
@@ -3839,145 +3520,239 @@ contains
 
     allocate(cnf%ndep_to_sminn(beg:end))
     allocate(cnf%nfix_to_sminn(beg:end))
-    allocate(cnf%fert_to_sminn(beg:end))
-    allocate(cnf%soyfixn_to_sminn(beg:end))    
+    allocate(cnf%m_leafn_to_litr1n(beg:end))
+    allocate(cnf%m_leafn_to_litr2n(beg:end))
+    allocate(cnf%m_leafn_to_litr3n(beg:end))
+    allocate(cnf%m_frootn_to_litr1n(beg:end))
+    allocate(cnf%m_frootn_to_litr2n(beg:end))
+    allocate(cnf%m_frootn_to_litr3n(beg:end))
+    allocate(cnf%m_leafn_storage_to_litr1n(beg:end))
+    allocate(cnf%m_frootn_storage_to_litr1n(beg:end))
+    allocate(cnf%m_livestemn_storage_to_litr1n(beg:end))
+    allocate(cnf%m_deadstemn_storage_to_litr1n(beg:end))
+    allocate(cnf%m_livecrootn_storage_to_litr1n(beg:end))
+    allocate(cnf%m_deadcrootn_storage_to_litr1n(beg:end))
+    allocate(cnf%m_leafn_xfer_to_litr1n(beg:end))
+    allocate(cnf%m_frootn_xfer_to_litr1n(beg:end))
+    allocate(cnf%m_livestemn_xfer_to_litr1n(beg:end))
+    allocate(cnf%m_deadstemn_xfer_to_litr1n(beg:end))
+    allocate(cnf%m_livecrootn_xfer_to_litr1n(beg:end))
+    allocate(cnf%m_deadcrootn_xfer_to_litr1n(beg:end))
+    allocate(cnf%m_livestemn_to_cwdn(beg:end))
+    allocate(cnf%m_deadstemn_to_cwdn(beg:end))
+    allocate(cnf%m_livecrootn_to_cwdn(beg:end))
+    allocate(cnf%m_deadcrootn_to_cwdn(beg:end))
+    allocate(cnf%m_retransn_to_litr1n(beg:end))
+    allocate(cnf%hrv_leafn_to_litr1n(beg:end))             
+    allocate(cnf%hrv_leafn_to_litr2n(beg:end))             
+    allocate(cnf%hrv_leafn_to_litr3n(beg:end))             
+    allocate(cnf%hrv_frootn_to_litr1n(beg:end))            
+    allocate(cnf%hrv_frootn_to_litr2n(beg:end))            
+    allocate(cnf%hrv_frootn_to_litr3n(beg:end))            
+    allocate(cnf%hrv_livestemn_to_cwdn(beg:end))           
     allocate(cnf%hrv_deadstemn_to_prod10n(beg:end))        
     allocate(cnf%hrv_deadstemn_to_prod100n(beg:end))       
-
-    allocate(cnf%m_n_to_litr_met_fire(beg:end,1:nlevdecomp_full))
-    allocate(cnf%m_n_to_litr_cel_fire(beg:end,1:nlevdecomp_full))
-    allocate(cnf%m_n_to_litr_lig_fire(beg:end,1:nlevdecomp_full))
-    allocate(cnf%sminn_to_plant(beg:end))
-    allocate(cnf%potential_immob(beg:end))
-    allocate(cnf%actual_immob(beg:end))
-    allocate(cnf%gross_nmin(beg:end))
-    allocate(cnf%net_nmin(beg:end))
-    allocate(cnf%denit(beg:end))
-    allocate(cnf%supplement_to_sminn(beg:end))
-    allocate(cnf%m_decomp_npools_to_fire_vr(beg:end,1:nlevdecomp_full,1:ndecomp_pools))
-    allocate(cnf%m_decomp_npools_to_fire(beg:end,1:ndecomp_pools))
-    allocate(cnf%decomp_cascade_ntransfer_vr(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions))
-    allocate(cnf%decomp_cascade_ntransfer(beg:end,1:ndecomp_cascade_transitions))
-    allocate(cnf%decomp_cascade_sminn_flux_vr(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions))
-    allocate(cnf%decomp_cascade_sminn_flux(beg:end,1:ndecomp_cascade_transitions))
-    allocate(cnf%decomp_npools_sourcesink(beg:end,1:nlevdecomp_full,1:ndecomp_pools))
-
-    allocate(cnf%phenology_n_to_litr_met_n(beg:end, 1:nlevdecomp_full))
-    allocate(cnf%phenology_n_to_litr_cel_n(beg:end, 1:nlevdecomp_full))
-    allocate(cnf%phenology_n_to_litr_lig_n(beg:end, 1:nlevdecomp_full))
-    allocate(cnf%gap_mortality_n_to_litr_met_n(beg:end, 1:nlevdecomp_full))
-    allocate(cnf%gap_mortality_n_to_litr_cel_n(beg:end, 1:nlevdecomp_full))
-    allocate(cnf%gap_mortality_n_to_litr_lig_n(beg:end, 1:nlevdecomp_full))
-    allocate(cnf%gap_mortality_n_to_cwdn(beg:end, 1:nlevdecomp_full))
-    allocate(cnf%fire_mortality_n_to_cwdn(beg:end, 1:nlevdecomp_full))
-    allocate(cnf%harvest_n_to_litr_met_n(beg:end, 1:nlevdecomp_full))
-    allocate(cnf%harvest_n_to_litr_cel_n(beg:end, 1:nlevdecomp_full))
-    allocate(cnf%harvest_n_to_litr_lig_n(beg:end, 1:nlevdecomp_full))
-    allocate(cnf%harvest_n_to_cwdn(beg:end, 1:nlevdecomp_full))
-
-    allocate(cnf%sminn_to_denit_decomp_cascade_vr(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions))
-    allocate(cnf%sminn_to_denit_decomp_cascade(beg:end,1:ndecomp_cascade_transitions))
-    allocate(cnf%sminn_to_denit_excess_vr(beg:end,1:nlevdecomp_full))
+    allocate(cnf%hrv_livecrootn_to_cwdn(beg:end))          
+    allocate(cnf%hrv_deadcrootn_to_cwdn(beg:end))          
+    allocate(cnf%hrv_retransn_to_litr1n(beg:end))          
+    allocate(cnf%hrv_leafn_storage_to_litr1n(beg:end))     
+    allocate(cnf%hrv_frootn_storage_to_litr1n(beg:end))    
+    allocate(cnf%hrv_livestemn_storage_to_litr1n(beg:end)) 
+    allocate(cnf%hrv_deadstemn_storage_to_litr1n(beg:end)) 
+    allocate(cnf%hrv_livecrootn_storage_to_litr1n(beg:end))
+    allocate(cnf%hrv_deadcrootn_storage_to_litr1n(beg:end))
+    allocate(cnf%hrv_leafn_xfer_to_litr1n(beg:end))        
+    allocate(cnf%hrv_frootn_xfer_to_litr1n(beg:end))       
+    allocate(cnf%hrv_livestemn_xfer_to_litr1n(beg:end))    
+    allocate(cnf%hrv_deadstemn_xfer_to_litr1n(beg:end))    
+    allocate(cnf%hrv_livecrootn_xfer_to_litr1n(beg:end))   
+    allocate(cnf%hrv_deadcrootn_xfer_to_litr1n(beg:end))   
+    allocate(cnf%m_deadstemn_to_cwdn_fire(beg:end))
+    allocate(cnf%m_deadcrootn_to_cwdn_fire(beg:end))
+    allocate(cnf%m_litr1n_to_fire(beg:end))
+    allocate(cnf%m_litr2n_to_fire(beg:end))
+    allocate(cnf%m_litr3n_to_fire(beg:end))
+    allocate(cnf%m_cwdn_to_fire(beg:end))
+    if ( crop_prog )then
+       allocate(cnf%grainn_to_litr1n(beg:end))
+       allocate(cnf%grainn_to_litr2n(beg:end))
+       allocate(cnf%grainn_to_litr3n(beg:end))
+       allocate(cnf%livestemn_to_litr1n(beg:end))
+       allocate(cnf%livestemn_to_litr2n(beg:end))
+       allocate(cnf%livestemn_to_litr3n(beg:end))
+    end if
+    allocate(cnf%leafn_to_litr1n(beg:end))
+    allocate(cnf%leafn_to_litr2n(beg:end))
+    allocate(cnf%leafn_to_litr3n(beg:end))
+    allocate(cnf%frootn_to_litr1n(beg:end))
+    allocate(cnf%frootn_to_litr2n(beg:end))
+    allocate(cnf%frootn_to_litr3n(beg:end))
+    allocate(cnf%cwdn_to_litr2n(beg:end))
+    allocate(cnf%cwdn_to_litr3n(beg:end))
+    allocate(cnf%litr1n_to_soil1n(beg:end))
+    allocate(cnf%sminn_to_soil1n_l1(beg:end))
+    allocate(cnf%litr2n_to_soil2n(beg:end))
+    allocate(cnf%sminn_to_soil2n_l2(beg:end))
+    allocate(cnf%litr3n_to_soil3n(beg:end))
+    allocate(cnf%sminn_to_soil3n_l3(beg:end))
+    allocate(cnf%soil1n_to_soil2n(beg:end))
+    allocate(cnf%sminn_to_soil2n_s1(beg:end))
+    allocate(cnf%soil2n_to_soil3n(beg:end))
+    allocate(cnf%sminn_to_soil3n_s2(beg:end))
+    allocate(cnf%soil3n_to_soil4n(beg:end))
+    allocate(cnf%sminn_to_soil4n_s3(beg:end))
+    allocate(cnf%soil4n_to_sminn(beg:end))
+    allocate(cnf%sminn_to_denit_l1s1(beg:end))
+    allocate(cnf%sminn_to_denit_l2s2(beg:end))
+    allocate(cnf%sminn_to_denit_l3s3(beg:end))
+    allocate(cnf%sminn_to_denit_s1s2(beg:end))
+    allocate(cnf%sminn_to_denit_s2s3(beg:end))
+    allocate(cnf%sminn_to_denit_s3s4(beg:end))
+    allocate(cnf%sminn_to_denit_s4(beg:end))
     allocate(cnf%sminn_to_denit_excess(beg:end))
-    allocate(cnf%sminn_leached_vr(beg:end,1:nlevdecomp_full))
     allocate(cnf%sminn_leached(beg:end))
-    allocate(cnf%potential_immob_vr(beg:end,1:nlevdecomp_full))
-    allocate(cnf%actual_immob_vr(beg:end,1:nlevdecomp_full))
-    allocate(cnf%sminn_to_plant_vr(beg:end,1:nlevdecomp_full))
-    allocate(cnf%supplement_to_sminn_vr(beg:end,1:nlevdecomp_full))
-    allocate(cnf%gross_nmin_vr(beg:end,1:nlevdecomp_full))
-    allocate(cnf%net_nmin_vr(beg:end,1:nlevdecomp_full))
     allocate(cnf%dwt_seedn_to_leaf(beg:end))
     allocate(cnf%dwt_seedn_to_deadstem(beg:end))
     allocate(cnf%dwt_conv_nflux(beg:end))
     allocate(cnf%dwt_prod10n_gain(beg:end))
     allocate(cnf%dwt_prod100n_gain(beg:end))
-    allocate(cnf%dwt_frootn_to_litr_met_n(beg:end,1:nlevdecomp_full))
-    allocate(cnf%dwt_frootn_to_litr_cel_n(beg:end,1:nlevdecomp_full))
-    allocate(cnf%dwt_frootn_to_litr_lig_n(beg:end,1:nlevdecomp_full))
-    allocate(cnf%dwt_livecrootn_to_cwdn(beg:end,1:nlevdecomp_full))
-    allocate(cnf%dwt_deadcrootn_to_cwdn(beg:end,1:nlevdecomp_full))
+    allocate(cnf%dwt_frootn_to_litr1n(beg:end))
+    allocate(cnf%dwt_frootn_to_litr2n(beg:end))
+    allocate(cnf%dwt_frootn_to_litr3n(beg:end))
+    allocate(cnf%dwt_livecrootn_to_cwdn(beg:end))
+    allocate(cnf%dwt_deadcrootn_to_cwdn(beg:end))
     allocate(cnf%dwt_nloss(beg:end))
     allocate(cnf%prod10n_loss(beg:end))
     allocate(cnf%prod100n_loss(beg:end))
     allocate(cnf%product_nloss(beg:end))
+    allocate(cnf%potential_immob(beg:end))
+    allocate(cnf%actual_immob(beg:end))
+    allocate(cnf%sminn_to_plant(beg:end))
+    allocate(cnf%supplement_to_sminn(beg:end))
+    allocate(cnf%gross_nmin(beg:end))
+    allocate(cnf%net_nmin(beg:end))
+    allocate(cnf%denit(beg:end))
     allocate(cnf%col_ninputs(beg:end))
     allocate(cnf%col_noutputs(beg:end))
     allocate(cnf%col_fire_nloss(beg:end))
-    allocate(cnf%som_n_leached(beg:end))
-    allocate(cnf%decomp_npools_leached(beg:end,1:ndecomp_pools))
-    allocate(cnf%decomp_npools_transport_tendency(beg:end,1:nlevdecomp_full,1:ndecomp_pools))
-    
+
     cnf%ndep_to_sminn(beg:end) = nan
     cnf%nfix_to_sminn(beg:end) = nan
-    cnf%fert_to_sminn(beg:end) = nan
-    cnf%soyfixn_to_sminn(beg:end) = nan
+    cnf%m_leafn_to_litr1n(beg:end) = nan
+    cnf%m_leafn_to_litr2n(beg:end) = nan
+    cnf%m_leafn_to_litr3n(beg:end) = nan
+    cnf%m_frootn_to_litr1n(beg:end) = nan
+    cnf%m_frootn_to_litr2n(beg:end) = nan
+    cnf%m_frootn_to_litr3n(beg:end) = nan
+    cnf%m_leafn_storage_to_litr1n(beg:end) = nan
+    cnf%m_frootn_storage_to_litr1n(beg:end) = nan
+    cnf%m_livestemn_storage_to_litr1n(beg:end) = nan
+    cnf%m_deadstemn_storage_to_litr1n(beg:end) = nan
+    cnf%m_livecrootn_storage_to_litr1n(beg:end) = nan
+    cnf%m_deadcrootn_storage_to_litr1n(beg:end) = nan
+    cnf%m_leafn_xfer_to_litr1n(beg:end) = nan
+    cnf%m_frootn_xfer_to_litr1n(beg:end) = nan
+    cnf%m_livestemn_xfer_to_litr1n(beg:end) = nan
+    cnf%m_deadstemn_xfer_to_litr1n(beg:end) = nan
+    cnf%m_livecrootn_xfer_to_litr1n(beg:end) = nan
+    cnf%m_deadcrootn_xfer_to_litr1n(beg:end) = nan
+    cnf%m_livestemn_to_cwdn(beg:end) = nan
+    cnf%m_deadstemn_to_cwdn(beg:end) = nan
+    cnf%m_livecrootn_to_cwdn(beg:end) = nan
+    cnf%m_deadcrootn_to_cwdn(beg:end) = nan
+    cnf%m_retransn_to_litr1n(beg:end) = nan
+    cnf%hrv_leafn_to_litr1n(beg:end) = nan             
+    cnf%hrv_leafn_to_litr2n(beg:end) = nan             
+    cnf%hrv_leafn_to_litr3n(beg:end) = nan             
+    cnf%hrv_frootn_to_litr1n(beg:end) = nan            
+    cnf%hrv_frootn_to_litr2n(beg:end) = nan            
+    cnf%hrv_frootn_to_litr3n(beg:end) = nan            
+    cnf%hrv_livestemn_to_cwdn(beg:end) = nan           
     cnf%hrv_deadstemn_to_prod10n(beg:end) = nan        
     cnf%hrv_deadstemn_to_prod100n(beg:end) = nan       
-    cnf%m_n_to_litr_met_fire(beg:end,1:nlevdecomp_full) = nan
-    cnf%m_n_to_litr_cel_fire(beg:end,1:nlevdecomp_full) = nan
-    cnf%m_n_to_litr_lig_fire(beg:end,1:nlevdecomp_full) = nan
-    cnf%sminn_to_plant(beg:end) = nan
-    cnf%potential_immob(beg:end) = nan
-    cnf%actual_immob(beg:end) = nan
-    cnf%gross_nmin(beg:end) = nan
-    cnf%net_nmin(beg:end) = nan
-    cnf%denit(beg:end) = nan
-    cnf%supplement_to_sminn(beg:end) = nan
-    cnf%m_decomp_npools_to_fire_vr(beg:end,1:nlevdecomp_full,1:ndecomp_pools)                 = nan
-    cnf%m_decomp_npools_to_fire(beg:end,1:ndecomp_pools)                                      = nan
-    cnf%decomp_cascade_ntransfer_vr(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions)  = nan
-    cnf%decomp_cascade_ntransfer(beg:end,1:ndecomp_cascade_transitions)                       = nan
-    cnf%decomp_cascade_sminn_flux_vr(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions) = nan
-    cnf%decomp_cascade_sminn_flux(beg:end,1:ndecomp_cascade_transitions)                      = nan
-    cnf%decomp_npools_sourcesink(beg:end,1:nlevdecomp_full,1:ndecomp_pools)                   = nan
-    
-    cnf%phenology_n_to_litr_met_n(beg:end, 1:nlevdecomp_full)                     = nan
-    cnf%phenology_n_to_litr_cel_n(beg:end, 1:nlevdecomp_full)                     = nan
-    cnf%phenology_n_to_litr_lig_n(beg:end, 1:nlevdecomp_full)                     = nan
-    cnf%gap_mortality_n_to_litr_met_n(beg:end, 1:nlevdecomp_full)                 = nan
-    cnf%gap_mortality_n_to_litr_cel_n(beg:end, 1:nlevdecomp_full)                 = nan
-    cnf%gap_mortality_n_to_litr_lig_n(beg:end, 1:nlevdecomp_full)                 = nan
-    cnf%gap_mortality_n_to_cwdn(beg:end, 1:nlevdecomp_full)                       = nan
-    cnf%fire_mortality_n_to_cwdn(beg:end, 1:nlevdecomp_full)                      = nan
-    cnf%harvest_n_to_litr_met_n(beg:end, 1:nlevdecomp_full)                       = nan
-    cnf%harvest_n_to_litr_cel_n(beg:end, 1:nlevdecomp_full)                       = nan
-    cnf%harvest_n_to_litr_lig_n(beg:end, 1:nlevdecomp_full)                       = nan
-    cnf%harvest_n_to_cwdn(beg:end, 1:nlevdecomp_full)                             = nan
-
-    cnf%sminn_to_denit_decomp_cascade_vr(beg:end,1:nlevdecomp_full,1:ndecomp_cascade_transitions) = nan
-    cnf%sminn_to_denit_decomp_cascade(beg:end,1:ndecomp_cascade_transitions) = nan
-    cnf%sminn_to_denit_excess_vr(beg:end,1:nlevdecomp_full) = nan
+    cnf%hrv_livecrootn_to_cwdn(beg:end) = nan          
+    cnf%hrv_deadcrootn_to_cwdn(beg:end) = nan          
+    cnf%hrv_retransn_to_litr1n(beg:end) = nan          
+    cnf%hrv_leafn_storage_to_litr1n(beg:end) = nan     
+    cnf%hrv_frootn_storage_to_litr1n(beg:end) = nan    
+    cnf%hrv_livestemn_storage_to_litr1n(beg:end) = nan 
+    cnf%hrv_deadstemn_storage_to_litr1n(beg:end) = nan 
+    cnf%hrv_livecrootn_storage_to_litr1n(beg:end) = nan
+    cnf%hrv_deadcrootn_storage_to_litr1n(beg:end) = nan
+    cnf%hrv_leafn_xfer_to_litr1n(beg:end) = nan        
+    cnf%hrv_frootn_xfer_to_litr1n(beg:end) = nan       
+    cnf%hrv_livestemn_xfer_to_litr1n(beg:end) = nan    
+    cnf%hrv_deadstemn_xfer_to_litr1n(beg:end) = nan    
+    cnf%hrv_livecrootn_xfer_to_litr1n(beg:end) = nan   
+    cnf%hrv_deadcrootn_xfer_to_litr1n(beg:end) = nan   
+    cnf%m_deadstemn_to_cwdn_fire(beg:end) = nan
+    cnf%m_deadcrootn_to_cwdn_fire(beg:end) = nan
+    cnf%m_litr1n_to_fire(beg:end) = nan
+    cnf%m_litr2n_to_fire(beg:end) = nan
+    cnf%m_litr3n_to_fire(beg:end) = nan
+    cnf%m_cwdn_to_fire(beg:end) = nan
+    if ( crop_prog )then
+       cnf%grainn_to_litr1n(beg:end)    = nan
+       cnf%grainn_to_litr2n(beg:end)    = nan
+       cnf%grainn_to_litr3n(beg:end)    = nan
+       cnf%livestemn_to_litr1n(beg:end) = nan
+       cnf%livestemn_to_litr2n(beg:end) = nan
+       cnf%livestemn_to_litr3n(beg:end) = nan
+    end if
+    cnf%leafn_to_litr1n(beg:end) = nan
+    cnf%leafn_to_litr2n(beg:end) = nan
+    cnf%leafn_to_litr3n(beg:end) = nan
+    cnf%frootn_to_litr1n(beg:end) = nan
+    cnf%frootn_to_litr2n(beg:end) = nan
+    cnf%frootn_to_litr3n(beg:end) = nan
+    cnf%cwdn_to_litr2n(beg:end) = nan
+    cnf%cwdn_to_litr3n(beg:end) = nan
+    cnf%litr1n_to_soil1n(beg:end) = nan
+    cnf%sminn_to_soil1n_l1(beg:end) = nan
+    cnf%litr2n_to_soil2n(beg:end) = nan
+    cnf%sminn_to_soil2n_l2(beg:end) = nan
+    cnf%litr3n_to_soil3n(beg:end) = nan
+    cnf%sminn_to_soil3n_l3(beg:end) = nan
+    cnf%soil1n_to_soil2n(beg:end) = nan
+    cnf%sminn_to_soil2n_s1(beg:end) = nan
+    cnf%soil2n_to_soil3n(beg:end) = nan
+    cnf%sminn_to_soil3n_s2(beg:end) = nan
+    cnf%soil3n_to_soil4n(beg:end) = nan
+    cnf%sminn_to_soil4n_s3(beg:end) = nan
+    cnf%soil4n_to_sminn(beg:end) = nan
+    cnf%sminn_to_denit_l1s1(beg:end) = nan
+    cnf%sminn_to_denit_l2s2(beg:end) = nan
+    cnf%sminn_to_denit_l3s3(beg:end) = nan
+    cnf%sminn_to_denit_s1s2(beg:end) = nan
+    cnf%sminn_to_denit_s2s3(beg:end) = nan
+    cnf%sminn_to_denit_s3s4(beg:end) = nan
+    cnf%sminn_to_denit_s4(beg:end) = nan
     cnf%sminn_to_denit_excess(beg:end) = nan
-    cnf%sminn_leached_vr(beg:end,1:nlevdecomp_full) = nan
     cnf%sminn_leached(beg:end) = nan
-    cnf%potential_immob_vr(beg:end,1:nlevdecomp_full) = nan
-    cnf%actual_immob_vr(beg:end,1:nlevdecomp_full) = nan
-    cnf%sminn_to_plant_vr(beg:end,1:nlevdecomp_full) = nan
-    cnf%supplement_to_sminn_vr(beg:end,1:nlevdecomp_full) = nan
-    cnf%gross_nmin_vr(beg:end,1:nlevdecomp_full) = nan
-    cnf%net_nmin_vr(beg:end,1:nlevdecomp_full) = nan
     cnf%dwt_seedn_to_leaf(beg:end) = nan
     cnf%dwt_seedn_to_deadstem(beg:end) = nan
     cnf%dwt_conv_nflux(beg:end) = nan
     cnf%dwt_prod10n_gain(beg:end) = nan
     cnf%dwt_prod100n_gain(beg:end) = nan
-    cnf%dwt_frootn_to_litr_met_n(beg:end,1:nlevdecomp_full) = nan
-    cnf%dwt_frootn_to_litr_cel_n(beg:end,1:nlevdecomp_full) = nan
-    cnf%dwt_frootn_to_litr_lig_n(beg:end,1:nlevdecomp_full) = nan
-    cnf%dwt_livecrootn_to_cwdn(beg:end,1:nlevdecomp_full) = nan
-    cnf%dwt_deadcrootn_to_cwdn(beg:end,1:nlevdecomp_full) = nan
+    cnf%dwt_frootn_to_litr1n(beg:end) = nan
+    cnf%dwt_frootn_to_litr2n(beg:end) = nan
+    cnf%dwt_frootn_to_litr3n(beg:end) = nan
+    cnf%dwt_livecrootn_to_cwdn(beg:end) = nan
+    cnf%dwt_deadcrootn_to_cwdn(beg:end) = nan
     cnf%dwt_nloss(beg:end) = nan
     cnf%prod10n_loss(beg:end) = nan
     cnf%prod100n_loss(beg:end) = nan
     cnf%product_nloss(beg:end) = nan
+    cnf%potential_immob(beg:end) = nan
+    cnf%actual_immob(beg:end) = nan
+    cnf%sminn_to_plant(beg:end) = nan
+    cnf%supplement_to_sminn(beg:end) = nan
+    cnf%gross_nmin(beg:end) = nan
+    cnf%net_nmin(beg:end) = nan
+    cnf%denit(beg:end) = nan
     cnf%col_ninputs(beg:end) = nan
     cnf%col_noutputs(beg:end) = nan
     cnf%col_fire_nloss(beg:end) = nan
-    cnf%som_n_leached(beg:end)                                                      = nan 
-    cnf%decomp_npools_leached(beg:end,1:ndecomp_pools)                              = nan
-    cnf%decomp_npools_transport_tendency(beg:end,1:nlevdecomp_full,1:ndecomp_pools) = nan
-
 
   end subroutine init_column_nflux_type
 
@@ -4006,14 +3781,12 @@ contains
     allocate(lps%t_building(beg:end))
     allocate(lps%t_building_max(beg:end))
     allocate(lps%t_building_min(beg:end))
-    if ( nlevurb > 0 )then
-      allocate(lps%tk_wall(beg:end,nlevurb))
-      allocate(lps%tk_roof(beg:end,nlevurb))
-      allocate(lps%cv_wall(beg:end,nlevurb))
-      allocate(lps%cv_roof(beg:end,nlevurb))
-    end if
-    allocate(lps%tk_improad(beg:end,nlevurb))
-    allocate(lps%cv_improad(beg:end,nlevurb))
+    allocate(lps%tk_wall(beg:end,nlevurb))
+    allocate(lps%tk_roof(beg:end,nlevurb))
+    allocate(lps%tk_improad(beg:end,nlevgrnd))
+    allocate(lps%cv_wall(beg:end,nlevurb))
+    allocate(lps%cv_roof(beg:end,nlevurb))
+    allocate(lps%cv_improad(beg:end,nlevgrnd))
     allocate(lps%thick_wall(beg:end))
     allocate(lps%thick_roof(beg:end))
     allocate(lps%nlev_improad(beg:end))
@@ -4038,14 +3811,13 @@ contains
     lps%t_building(beg:end) = nan
     lps%t_building_max(beg:end) = nan
     lps%t_building_min(beg:end) = nan
-    if ( nlevurb > 0 )then
-      lps%tk_wall(beg:end,1:nlevurb) = nan
-      lps%tk_roof(beg:end,1:nlevurb) = nan
-      lps%cv_wall(beg:end,1:nlevurb) = nan
-      lps%cv_roof(beg:end,1:nlevurb) = nan
-    end if
-    lps%tk_improad(beg:end,1:nlevurb) = nan
-    lps%cv_improad(beg:end,1:nlevurb) = nan
+    lps%tk_wall(beg:end,1:nlevurb) = nan
+    lps%tk_roof(beg:end,1:nlevurb) = nan
+    lps%tk_improad(beg:end,1:nlevgrnd) = nan
+    lps%cv_wall(beg:end,1:nlevurb) = nan
+    lps%cv_roof(beg:end,1:nlevurb) = nan
+    lps%cv_improad(beg:end,1:nlevgrnd) = nan
+    lps%cv_improad(beg:end,1:5) = nan
     lps%thick_wall(beg:end) = nan
     lps%thick_roof(beg:end) = nan
     lps%nlev_improad(beg:end) = huge(1)
@@ -4103,7 +3875,92 @@ contains
 
   end subroutine init_landunit_eflux_type
 
+!------------------------------------------------------------------------
+!BOP
+!
+! !IROUTINE: init_gridcell_dgvstate_type
+!
+! !INTERFACE:
+  subroutine init_gridcell_dgvstate_type(beg, end, gps)
+!
+! !DESCRIPTION:
+! Initialize gridcell DGVM variables
+!
+! !ARGUMENTS:
+    implicit none
+    integer, intent(in) :: beg, end
+    type (gridcell_dgvstate_type), intent(inout):: gps
+!
+! !REVISION HISTORY:
+! Created by Mariana Vertenstein
+!
+!EOP
+!------------------------------------------------------------------------
 
+    allocate(gps%agdd20(beg:end))
+    allocate(gps%tmomin20(beg:end))
+    allocate(gps%t10min(beg:end))
+
+    gps%agdd20(beg:end) = nan
+    gps%tmomin20(beg:end) = nan
+    gps%t10min(beg:end) = nan
+
+  end subroutine init_gridcell_dgvstate_type
+
+!------------------------------------------------------------------------
+!BOP
+!
+! !IROUTINE: init_gridcell_pstate_type
+!
+! !INTERFACE:
+  subroutine init_gridcell_pstate_type(beg, end, gps)
+!
+! !DESCRIPTION:
+! Initialize gridcell physical state variables
+!
+! !ARGUMENTS:
+    implicit none
+    integer, intent(in) :: beg, end
+    type (gridcell_pstate_type), intent(inout):: gps
+!
+! !REVISION HISTORY:
+! Created by Mariana Vertenstein
+!
+!EOP
+!------------------------------------------------------------------------
+    
+    
+    !allocate(gps%bcphiwet2t(beg:end,1:2))
+    !allocate(gps%bcphidry2t(beg:end,1:2))
+    !allocate(gps%bcphodry2t(beg:end,1:2))
+    !allocate(gps%ocphiwet2t(beg:end,1:2))
+    !allocate(gps%ocphidry2t(beg:end,1:2))
+    !allocate(gps%ocphodry2t(beg:end,1:2))
+    !allocate(gps%dstx01wd2t(beg:end,1:2))
+    !allocate(gps%dstx01dd2t(beg:end,1:2))
+    !allocate(gps%dstx02wd2t(beg:end,1:2))
+    !allocate(gps%dstx02dd2t(beg:end,1:2))
+    !allocate(gps%dstx03wd2t(beg:end,1:2))
+    !allocate(gps%dstx03dd2t(beg:end,1:2))
+    !allocate(gps%dstx04wd2t(beg:end,1:2))
+    !allocate(gps%dstx04dd2t(beg:end,1:2))
+    
+    !gps%bcphiwet2t(beg:end,1:2) = nan
+    !gps%bcphidry2t(beg:end,1:2) = nan
+    !gps%bcphodry2t(beg:end,1:2) = nan
+    !gps%ocphiwet2t(beg:end,1:2) = nan
+    !gps%ocphidry2t(beg:end,1:2) = nan
+    !gps%ocphodry2t(beg:end,1:2) = nan
+    !gps%dstx01wd2t(beg:end,1:2) = nan
+    !gps%dstx01dd2t(beg:end,1:2) = nan
+    !gps%dstx02wd2t(beg:end,1:2) = nan
+    !gps%dstx02dd2t(beg:end,1:2) = nan
+    !gps%dstx03wd2t(beg:end,1:2) = nan
+    !gps%dstx03dd2t(beg:end,1:2) = nan
+    !gps%dstx04wd2t(beg:end,1:2) = nan
+    !gps%dstx04dd2t(beg:end,1:2) = nan
+
+  end subroutine init_gridcell_pstate_type
 
 !------------------------------------------------------------------------
 !BOP
@@ -4158,11 +4015,13 @@ contains
     allocate(gwf%qflx_snwcp_iceg(beg:end))
     allocate(gwf%qflx_liq_dynbal(beg:end))
     allocate(gwf%qflx_ice_dynbal(beg:end))
+    allocate(gwf%qflx_floodg(beg:end))
 
     gwf%qflx_runoffg(beg:end) = 0._r8
     gwf%qflx_snwcp_iceg(beg:end) = 0._r8
     gwf%qflx_liq_dynbal(beg:end) = nan
     gwf%qflx_ice_dynbal(beg:end) = nan
+    gwf%qflx_floodg(beg:end) = 0._r8 !rtm_flood: initialize to zero for 1st time step instead of nan
 
   end subroutine init_gridcell_wflux_type
 
@@ -4256,12 +4115,5 @@ contains
     ges%gc_heat2(beg:end) = nan    
 
   end subroutine init_gridcell_estate_type
-
-!------------------------------------------------------------------------
-!BOP
-!
-! !IROUTINE: init_gridcell_ch4_type
-!
-! !INTERFACE:
 
 end module clmtypeInitMod
