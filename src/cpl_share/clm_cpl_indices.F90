@@ -189,6 +189,8 @@ contains
     call mct_aVect_init(l2x, rList=trim(metaData%flds_lnd2x))
     call mct_aVect_init(x2l, rList=trim(metaData%flds_x2lnd))
 
+    !write (6, *) trim(metaData%flds_lnd2x)
+
     !-------------------------------------------------------------
     ! clm -> drv 
     !-------------------------------------------------------------
